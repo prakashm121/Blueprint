@@ -1,0 +1,322 @@
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { api } from '../api';
+import { ChevronRight, Sparkles, Target, GraduationCap, Check } from 'lucide-react';
+
+const STEPS = ['profile', 'assessment', 'goals', 'roadmap'];
+
+function StepIndicator({ current }) {
+  const idx = STEPS.indexOf(current);
+  return (
+    <div className="mb-8 flex items-center justify-center gap-2">
+      {STEPS.map((step, i) => (
+        <div key={step} className="flex items-center gap-2">
+          <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${
+            i <= idx ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-500'
+          }`}>
+            {i < idx ? <Check className="h-4 w-4" /> : i + 1}
+          </div>
+          {i < STEPS.length - 1 && (
+            <div className={`h-0.5 w-8 ${i < idx ? 'bg-sky-500' : 'bg-slate-800'}`} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ConfidenceSlider({ label, value, onChange }) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-medium text-slate-200">{label}</span>
+        <span className="text-sm font-semibold text-sky-400">{value}%</span>
+      </div>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        step="5"
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full accent-sky-500"
+      />
+    </div>
+  );
+}
+
+export default function Onboarding() {
+  const navigate = useNavigate();
+  const [step, setStep] = useState('profile');
+  const [error, setError] = useState('');
+  const [catalog, setCatalog] = useState(null);
+  const [profileData, setProfileData] = useState({
+    college_name: '', degree: '', graduation_year: '', cgpa: '',
+  });
+  const [confidence, setConfidence] = useState({});
+  const [goals, setGoals] = useState({ target_role: '', target_companies: [] });
+  const [generating, setGenerating] = useState(false);
+  const [generationStatus, setGenerationStatus] = useState(null);
+
+  useEffect(() => {
+    api.get('/api/v1/onboarding/status').then((res) => {
+      const s = res.data.onboarding_step;
+      if (s === 'completed') {
+        navigate('/dashboard', { replace: true });
+        return;
+      }
+      if (s && STEPS.includes(s)) setStep(s);
+      else if (s === 'generate_roadmap') setStep('roadmap');
+    }).catch(() => {});
+
+    api.get('/api/v1/onboarding/catalog').then((res) => {
+      setCatalog(res.data);
+      const initial = {};
+      [...res.data.subjects, ...res.data.dsa_topics].forEach((item) => {
+        initial[item.key] = 50;
+      });
+      setConfidence(initial);
+      if (!goals.target_role && res.data.target_roles?.length) {
+        setGoals((g) => ({ ...g, target_role: res.data.target_roles[0] }));
+      }
+    }).catch(() => {});
+  }, [navigate]);
+
+  const saveProfile = async (e) => {
+    e.preventDefault();
+    setError('');
+    try {
+      await api.patch('/api/v1/profile/', profileData);
+      setStep('assessment');
+    } catch {
+      setError('Failed to save profile. Please try again.');
+    }
+  };
+
+  const saveAssessment = async () => {
+    setError('');
+    if (!catalog) return;
+    const responses = [
+      ...catalog.subjects.map((s) => ({
+        skill_key: s.key, skill_type: 'subject', self_rated_confidence: confidence[s.key] ?? 50,
+      })),
+      ...catalog.dsa_topics.map((d) => ({
+        skill_key: d.key, skill_type: 'dsa', self_rated_confidence: confidence[d.key] ?? 50,
+      })),
+    ];
+    try {
+      await api.post('/api/v1/onboarding/assessment', { responses });
+      setStep('goals');
+    } catch {
+      setError('Failed to save assessment.');
+    }
+  };
+
+  const saveGoals = async () => {
+    setError('');
+    try {
+      await api.post('/api/v1/onboarding/goals', goals);
+      setStep('roadmap');
+    } catch {
+      setError('Failed to save goals.');
+    }
+  };
+
+  const generateRoadmap = async () => {
+    setGenerating(true);
+    setError('');
+    try {
+      const res = await api.post('/api/v1/onboarding/generate-roadmap');
+      const genId = res.data.planner_generation_id;
+      setGenerationStatus('queued');
+
+      const poll = async () => {
+        const statusRes = await api.get(`/api/v1/onboarding/roadmap-status/${genId}`);
+        setGenerationStatus(statusRes.data.status);
+        if (statusRes.data.status === 'completed') {
+          navigate('/dashboard', { replace: true });
+        } else if (statusRes.data.status === 'failed') {
+          setError('Roadmap generation failed. You can still continue to your dashboard.');
+          setGenerating(false);
+        } else {
+          setTimeout(poll, 1500);
+        }
+      };
+      setTimeout(poll, 1000);
+    } catch {
+      setError('Failed to start roadmap generation.');
+      setGenerating(false);
+    }
+  };
+
+  const toggleCompany = (name) => {
+    setGoals((g) => ({
+      ...g,
+      target_companies: g.target_companies.includes(name)
+        ? g.target_companies.filter((c) => c !== name)
+        : [...g.target_companies, name].slice(0, 5),
+    }));
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100 sm:px-8">
+      <div className="mx-auto max-w-2xl rounded-3xl border border-slate-800 bg-slate-900/95 p-8 shadow-2xl shadow-slate-950/40 backdrop-blur">
+        <div className="mb-4 space-y-3 text-center">
+          <p className="text-sm uppercase tracking-[0.35em] text-sky-400/80">Onboarding</p>
+          <h1 className="text-3xl font-semibold text-white">
+            {step === 'profile' && 'Complete your profile'}
+            {step === 'assessment' && 'Rate your confidence'}
+            {step === 'goals' && 'Set your career goals'}
+            {step === 'roadmap' && 'Generate your roadmap'}
+          </h1>
+        </div>
+
+        <StepIndicator current={step} />
+        {error && <div className="mb-4 rounded-2xl border border-red-600/20 bg-red-600/10 px-4 py-3 text-sm text-red-200">{error}</div>}
+
+        {step === 'profile' && (
+          <form onSubmit={saveProfile} className="grid gap-5">
+            {[
+              { label: 'College name', name: 'college_name', type: 'text', required: true },
+              { label: 'Degree', name: 'degree', type: 'text' },
+              { label: 'Graduation year', name: 'graduation_year', type: 'number' },
+              { label: 'CGPA', name: 'cgpa', type: 'number', step: '0.01' },
+            ].map((field) => (
+              <label key={field.name} className="block text-sm font-medium text-slate-200">
+                {field.label}
+                <input
+                  type={field.type}
+                  step={field.step}
+                  className="mt-2 w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-slate-100 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-500/20"
+                  value={profileData[field.name]}
+                  onChange={(e) => setProfileData({
+                    ...profileData,
+                    [field.name]: field.type === 'number' ? (e.target.value ? Number(e.target.value) : '') : e.target.value,
+                  })}
+                  required={field.required}
+                />
+              </label>
+            ))}
+            <button type="submit" className="flex w-full items-center justify-center gap-2 rounded-2xl bg-sky-500 px-4 py-3 text-base font-semibold text-slate-950 transition hover:bg-sky-400">
+              Continue <ChevronRight className="h-4 w-4" />
+            </button>
+          </form>
+        )}
+
+        {step === 'assessment' && catalog && (
+          <div className="space-y-6">
+            <div>
+              <p className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-300">
+                <GraduationCap className="h-4 w-4 text-sky-400" /> Core Subjects
+              </p>
+              <div className="space-y-3">
+                {catalog.subjects.map((s) => (
+                  <ConfidenceSlider
+                    key={s.key}
+                    label={s.label}
+                    value={confidence[s.key] ?? 50}
+                    onChange={(v) => setConfidence({ ...confidence, [s.key]: v })}
+                  />
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="mb-3 text-sm font-medium text-slate-300">DSA Topics</p>
+              <div className="space-y-3">
+                {catalog.dsa_topics.map((d) => (
+                  <ConfidenceSlider
+                    key={d.key}
+                    label={d.label}
+                    value={confidence[d.key] ?? 50}
+                    onChange={(v) => setConfidence({ ...confidence, [d.key]: v })}
+                  />
+                ))}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={saveAssessment}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-sky-500 px-4 py-3 text-base font-semibold text-slate-950 transition hover:bg-sky-400"
+            >
+              Continue <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {step === 'goals' && catalog && (
+          <div className="space-y-6">
+            <label className="block text-sm font-medium text-slate-200">
+              Target role
+              <select
+                className="mt-2 w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-slate-100 outline-none transition focus:border-sky-400"
+                value={goals.target_role}
+                onChange={(e) => setGoals({ ...goals, target_role: e.target.value })}
+              >
+                {catalog.target_roles.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </label>
+            <div>
+              <p className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-200">
+                <Target className="h-4 w-4 text-sky-400" /> Target companies (pick up to 5)
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {catalog.sample_companies.map((co) => (
+                  <button
+                    key={co}
+                    type="button"
+                    onClick={() => toggleCompany(co)}
+                    className={`rounded-xl px-3 py-1.5 text-sm font-medium transition ${
+                      goals.target_companies.includes(co)
+                        ? 'bg-sky-500 text-slate-950'
+                        : 'border border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500'
+                    }`}
+                  >
+                    {co}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={saveGoals}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-sky-500 px-4 py-3 text-base font-semibold text-slate-950 transition hover:bg-sky-400"
+            >
+              Continue <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {step === 'roadmap' && (
+          <div className="text-center space-y-6">
+            <div className="inline-flex h-20 w-20 items-center justify-center rounded-3xl bg-sky-500/10 text-sky-300 mx-auto">
+              <Sparkles className="h-10 w-10" />
+            </div>
+            <p className="text-slate-400 leading-6">
+              We'll create a personalized weekly plan based on your profile, skills assessment, and career goals.
+            </p>
+            {generationStatus && (
+              <p className="text-sm text-sky-400 capitalize">Status: {generationStatus}...</p>
+            )}
+            <button
+              type="button"
+              onClick={generateRoadmap}
+              disabled={generating}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-sky-500 px-4 py-3 text-base font-semibold text-slate-950 transition hover:bg-sky-400 disabled:opacity-50"
+            >
+              {generating ? 'Generating your roadmap...' : 'Generate my roadmap'}
+            </button>
+            {!generating && (
+              <button
+                type="button"
+                onClick={() => navigate('/dashboard')}
+                className="text-sm text-slate-500 hover:text-slate-300"
+              >
+                Skip for now
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
