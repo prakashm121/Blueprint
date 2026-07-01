@@ -1,83 +1,27 @@
-import { useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api';
 import { useAuthStore } from '../store/authStore';
 import {
   Bell, Briefcase, ClipboardList, MessageSquare,
-  ShieldCheck, Sparkles, ChevronRight, TrendingUp,
-  BookOpen, Code2, FileText, BarChart3, LogOut
+  Sparkles, ChevronRight, Target, BookOpen, Code2,
+  FileText, LogOut, CheckSquare, Square, Plus
 } from 'lucide-react';
 
 const tileData = [
-  {
-    title: 'Planner',
-    text: 'Organize weekly goals and deadlines in one place.',
-    icon: ClipboardList,
-    link: '/planner',
-    color: '#0ea5e9',
-  },
-  {
-    title: 'AI Mentor',
-    text: 'Ask questions, get interview prep help, and refine your resume.',
-    icon: MessageSquare,
-    link: '/mentor',
-    color: '#8b5cf6',
-  },
-  {
-    title: 'Knowledge Vault',
-    text: 'Save notes, flashcards, and topic references for review.',
-    icon: BookOpen,
-    link: null,
-    color: '#22c55e',
-  },
-  {
-    title: 'Resume Analyzer',
-    text: 'Upload and analyze your resume to improve your fit.',
-    icon: FileText,
-    link: null,
-    color: '#f59e0b',
-  },
-  {
-    title: 'Interview Hub',
-    text: 'Track interviews, feedback, and next-step follow-ups.',
-    icon: Briefcase,
-    link: null,
-    color: '#ef4444',
-  },
-  {
-    title: 'Progress Score',
-    text: 'See your readiness at a glance across key career areas.',
-    icon: BarChart3,
-    link: null,
-    color: '#06b6d4',
-  },
+  { title: 'Planner', text: 'Organize weekly goals and deadlines in one place.', icon: ClipboardList, link: '/planner', color: '#b4c5ff' },
+  { title: 'AI Mentor', text: 'Ask questions, get interview prep help, and refine your resume.', icon: MessageSquare, link: '/mentor', color: '#c0c1ff' },
+  { title: 'Knowledge Vault', text: 'Save notes, flashcards, and topic references for review.', icon: BookOpen, link: null, color: '#10B981' },
+  { title: 'Resume Analyzer', text: 'Upload and analyze your resume to improve your fit.', icon: FileText, link: null, color: '#F59E0B' },
+  { title: 'Interview Hub', text: 'Prepare confidently with company-specific interview questions.', icon: Briefcase, link: null, color: '#d4e4fa' }
 ];
-
-function StatCard({ label, value, subtitle, icon: Icon, color }) {
-  return (
-    <div className="relative overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/90 p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg hover:border-slate-600">
-      <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full opacity-[0.07]" style={{ background: color }} />
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-slate-400">{label}</p>
-          <p className="mt-2 text-4xl font-semibold text-white">{value}</p>
-          {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
-        </div>
-        <div
-          className="inline-flex h-12 w-12 items-center justify-center rounded-2xl"
-          style={{ background: `${color}15`, color }}
-        >
-          <Icon className="h-6 w-6" />
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const logout = useAuthStore((state) => state.logout);
+  
+  // -- Working API Query --
   const { data, isLoading, isError } = useQuery({
     queryKey: ['dashboardSummary'],
     queryFn: async () => {
@@ -87,6 +31,17 @@ export default function Dashboard() {
     retry: false,
   });
 
+  // -- Interactive Checklist State --
+  const [focusItems, setFocusItems] = useState([
+    { id: 1, text: "Revise B-Tree balancing and dynamic partitioning equations", completed: true, category: "OS / DBMS" },
+    { id: 2, text: "Solve 3 Graph DFS cycle detection challenges", completed: false, category: "DSA" },
+    { id: 3, text: "Refactor Primary Port Microservices database config in Portfolio Project", completed: false, category: "Projects" },
+    { id: 4, text: "Incorporate robust STAR metric bullet points for Google LP in resume", completed: false, category: "Career" },
+  ]);
+  const [newItemText, setNewItemText] = useState("");
+  const [newItemCategory, setNewItemCategory] = useState("DSA");
+
+  // -- Dynamic Variables Mapping --
   const profile = data?.profile ?? {};
   const stats = {
     overall_readiness: data?.overall_readiness ?? 0,
@@ -103,151 +58,332 @@ export default function Dashboard() {
   const welcomeName = useMemo(() => {
     if (isLoading) return '…';
     if (isError) return '';
-    return profile.full_name ? `, ${profile.full_name}` : '';
+    return profile.full_name || 'PlacementOS User';
   }, [profile.full_name, isError, isLoading]);
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto flex min-h-screen max-w-7xl flex-col gap-6 px-6 py-8 lg:px-8">
+  const targetDsa = 200; 
+  const dsaPercent = Math.min((stats.dsa_solved / targetDsa) * 100, 100);
+  const weeklyTaskPercent = stats.weekly_tasks_total > 0 
+    ? (stats.weekly_tasks_completed / stats.weekly_tasks_total) * 100 
+    : 0;
 
-        {/* Header */}
-        <header className="flex flex-col gap-6 rounded-3xl border border-slate-800 bg-slate-900/95 p-6 shadow-2xl shadow-slate-950/40 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-sm uppercase tracking-[0.35em] text-sky-400/80">Dashboard</p>
-            <h1 className="mt-3 text-4xl font-semibold text-white sm:text-5xl">Welcome back{welcomeName}</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
-              Your latest readiness metrics are shown below. Continue with your weekly planner, AI mentor advice, and interview prep.
-            </p>
-          </div>
+  // -- Helper Functions --
+  const getReadinessLabel = (score) => {
+    if (score >= 85) return "Top 10% • Placement Ready";
+    if (score >= 75) return "Needs Work • Action Needed";
+    return "Critical Review Required";
+  };
+
+  const getStrokeDashOffset = (score) => {
+    const radius = 50;
+    const circumference = 2 * Math.PI * radius;
+    return circumference - (score / 100) * circumference;
+  };
+
+  const handleToggleTask = (id) => {
+    setFocusItems(focusItems.map((item) => (item.id === id ? { ...item, completed: !item.completed } : item)));
+  };
+
+  const handleAddTask = (e) => {
+    e.preventDefault();
+    if (!newItemText.trim()) return;
+    setFocusItems([...focusItems, { id: Date.now(), text: newItemText, completed: false, category: newItemCategory }]);
+    setNewItemText("");
+  };
+
+  return (
+    <div className="min-h-screen bg-background-deep text-on-surface font-sans pb-12 overflow-x-hidden">
+      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-6 py-8 lg:px-8">
+
+        {/* Global Control Bar */}
+        <div className="flex justify-end gap-4 mb-2">
           <Link
             to="/notifications"
-            className="flex items-center gap-3 self-start rounded-3xl bg-slate-950/80 px-4 py-3 text-sm text-slate-300 ring-1 ring-slate-700 sm:self-auto hover:ring-slate-500 transition"
+            className="flex items-center gap-2 rounded-xl bg-surface-card px-4 py-2 text-sm text-on-surface-variant border border-border-subtle hover:border-outline hover:text-on-surface transition-all"
           >
-            <span className="relative inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-300">
-              <Bell className="h-5 w-5" />
-              {(data?.unread_notifications_count ?? 0) > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-500 px-1 text-xs font-bold text-slate-950">
-                  {data.unread_notifications_count}
-                </span>
-              )}
-            </span>
-            <div>
-              <p className="text-slate-200">Notifications</p>
-              <p className="font-semibold text-white">
-                {(data?.unread_notifications_count ?? 0) > 0
-                  ? `${data.unread_notifications_count} unread`
-                  : 'All caught up'}
-              </p>
-            </div>
+            <Bell className="h-4 w-4" />
+            {(data?.unread_notifications_count ?? 0) > 0 && (
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-fixed-dim px-1 text-xs font-bold text-slate-950">
+                {data.unread_notifications_count}
+              </span>
+            )}
           </Link>
-        </header>
-
-        <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
-
-          {/* Sidebar */}
-          <aside className="space-y-6 rounded-3xl border border-slate-800 bg-slate-900/95 p-6 shadow-lg shadow-slate-950/20">
-            <div className="space-y-4">
-              <div className="rounded-3xl bg-slate-950/80 p-4">
-                <p className="text-sm uppercase tracking-[0.35em] text-slate-400">Your profile</p>
-                <p className="mt-3 text-xl font-semibold text-white">{profile.full_name || 'PlacementOS user'}</p>
-                <p className="mt-1 text-sm text-slate-500">{profile.college_name || 'No college set yet'}</p>
-                {profile.degree && <p className="mt-0.5 text-sm text-slate-500">{profile.degree}</p>}
-              </div>
-              <div className="rounded-3xl bg-slate-950/80 p-4">
-                <p className="text-sm uppercase tracking-[0.35em] text-slate-400">Readiness</p>
-                <p className="mt-3 text-4xl font-semibold text-white">{stats.overall_readiness}%</p>
-                <div className="mt-3 h-2 w-full rounded-full bg-slate-800 overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-700 ease-out"
-                    style={{
-                      width: `${stats.overall_readiness}%`,
-                      background: 'linear-gradient(90deg, #0ea5e9, #38bdf8)',
-                    }}
-                  />
-                </div>
-              </div>
-              <div className="rounded-3xl bg-slate-950/80 p-4">
-                <p className="text-sm uppercase tracking-[0.35em] text-slate-400">Next milestone</p>
-                <p className="mt-3 text-lg font-semibold text-white">{data?.next_milestone ?? 'Complete onboarding profile'}</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => { logout(); navigate('/login'); }}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-950/50 px-4 py-3 text-sm font-semibold text-slate-300 transition hover:border-slate-500 hover:text-white"
-            >
-              <LogOut className="h-4 w-4" />
-              Sign out
-            </button>
-          </aside>
-
-          {/* Main content */}
-          <section className="space-y-6">
-
-            {/* Stat cards */}
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              <StatCard label="Overall Readiness" value={`${stats.overall_readiness}%`} subtitle="Based on all your modules" icon={TrendingUp} color="#0ea5e9" />
-              <StatCard label="Weekly Tasks" value={`${stats.weekly_tasks_completed}/${stats.weekly_tasks_total}`} subtitle="Tasks completed this week" icon={ClipboardList} color="#8b5cf6" />
-              <StatCard label="DSA Solved" value={stats.dsa_solved} subtitle="Problems completed" icon={Code2} color="#22c55e" />
-              <StatCard label="Resume Score" value={`${stats.resume_score}%`} subtitle="Profile completeness" icon={FileText} color="#f59e0b" />
-              <StatCard label="Applications" value={stats.applications_sent} subtitle="Applications sent" icon={Briefcase} color="#ef4444" />
-              <StatCard label="Subjects" value={stats.subjects_completed} subtitle="Topics completed" icon={BookOpen} color="#06b6d4" />
-            </div>
-
-            {/* Feature tiles */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              {tileData.map((tile) => {
-                const Icon = tile.icon;
-                const Wrapper = tile.link ? Link : 'div';
-                const wrapperProps = tile.link ? { to: tile.link } : {};
-                return (
-                  <Wrapper
-                    key={tile.title}
-                    {...wrapperProps}
-                    className="group rounded-3xl border border-slate-800 bg-slate-900/90 p-6 shadow-sm transition hover:-translate-y-1 hover:border-slate-600 hover:shadow-lg cursor-pointer block"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div
-                        className="inline-flex h-12 w-12 items-center justify-center rounded-2xl"
-                        style={{ background: `${tile.color}15`, color: tile.color }}
-                      >
-                        <Icon className="h-6 w-6" />
-                      </div>
-                      {tile.link && (
-                        <ChevronRight className="h-5 w-5 text-slate-600 transition group-hover:text-slate-300 group-hover:translate-x-0.5" />
-                      )}
-                      {!tile.link && (
-                        <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-xs text-slate-500">Soon</span>
-                      )}
-                    </div>
-                    <h2 className="mt-5 text-lg font-semibold text-white">{tile.title}</h2>
-                    <p className="mt-2 text-sm leading-6 text-slate-400">{tile.text}</p>
-                  </Wrapper>
-                );
-              })}
-            </div>
-
-            {/* Focus CTA */}
-            <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6 shadow-sm">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm uppercase tracking-[0.35em] text-slate-500">Focus</p>
-                  <h2 className="mt-3 text-2xl font-semibold text-white">Improve your readiness with a weekly plan</h2>
-                </div>
-                <Sparkles className="h-8 w-8 text-sky-400" />
-              </div>
-              <p className="mt-5 text-sm leading-6 text-slate-400">
-                Use the planner to break down your interview preparation into small, actionable steps and track progress daily.
-              </p>
-              <Link
-                to="/planner"
-                className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-sky-500 px-6 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-sky-500/20 transition hover:bg-sky-400"
-              >
-                Open Planner <ChevronRight className="h-4 w-4" />
-              </Link>
-            </div>
-          </section>
+          <button
+            onClick={() => { logout(); navigate('/login'); }}
+            className="flex items-center gap-2 rounded-xl bg-surface-card px-4 py-2 text-sm text-on-surface-variant border border-border-subtle hover:border-outline hover:text-on-surface transition-all cursor-pointer"
+          >
+            <LogOut className="h-4 w-4" />
+            Sign out
+          </button>
         </div>
+
+        {/* Premium Welcome Banner Card */}
+        <div className="relative bg-surface-card border border-border-subtle rounded-2xl p-6 overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-sm">
+          <div className="absolute -top-24 -right-24 w-48 h-48 bg-primary-fixed-dim/10 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="relative z-10">
+            <h2 className="text-xl font-bold text-on-surface tracking-tight">Welcome back, {welcomeName} 👋</h2>
+            <p className="text-xs text-on-surface-variant mt-1 leading-relaxed">
+              Your next milestone target is: <span className="text-primary-fixed-dim font-semibold">{data?.next_milestone ?? 'Complete onboarding profile'}</span>
+            </p>
+          </div>
+          <div className="flex items-center gap-3 bg-surface-container-high border border-border-subtle rounded-xl py-2 px-4 shrink-0 relative z-10">
+            <Target className="w-5 h-5 text-primary-fixed-dim" />
+            <div className="text-left">
+              <span className="block text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">Target Objective</span>
+              <span className="text-xs text-on-surface font-semibold">{profile.degree || 'Software Engineer (L3)'}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Core Layout Grid: Placement Index & 2x2 Metric Stack */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          
+          {/* Left Block: Placement Readiness Circular Gauge */}
+          <div className="lg:col-span-5 bg-surface-card border border-border-subtle rounded-2xl p-6 flex flex-col items-center justify-between min-h-75">
+            <div className="w-full flex justify-between items-center border-b border-border-subtle/40 pb-3">
+              <h3 className="text-sm font-semibold text-on-surface">Placement Readiness</h3>
+              <span className="text-[10px] bg-primary-container/20 text-primary-fixed-dim font-bold px-2 py-0.5 rounded-full border border-primary-container/30">
+                Overall Match
+              </span>
+            </div>
+
+            <div className="relative flex items-center justify-center my-6">
+              <svg className="w-32 h-32 transform -rotate-90">
+                <circle cx="64" cy="64" r="50" stroke="var(--color-border-subtle)" strokeWidth="10" fill="transparent" />
+                <circle
+                  cx="64" cy="64" r="50" stroke="var(--color-primary-fixed-dim)" strokeWidth="10"
+                  strokeDasharray={`${2 * Math.PI * 50}`}
+                  strokeDashoffset={getStrokeDashOffset(stats.overall_readiness)}
+                  strokeLinecap="round" fill="transparent"
+                  className="transition-all duration-1000 ease-out"
+                />
+              </svg>
+              <div className="absolute text-center">
+                <span className="text-3xl font-extrabold text-on-surface tracking-tight">{stats.overall_readiness}%</span>
+                <span className="block text-[10px] text-on-surface-variant font-medium mt-0.5">EST. INDEX</span>
+              </div>
+            </div>
+
+            <div className="w-full text-center space-y-4">
+              <div>
+                <p className="text-sm font-bold text-on-surface">{getReadinessLabel(stats.overall_readiness)}</p>
+                <p className="text-xs text-on-surface-variant mt-0.5">Based on system evaluations across all core modules</p>
+              </div>
+              <button
+                onClick={() => navigate("/planner")}
+                className="w-full flex items-center justify-center gap-1 bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-semibold text-xs py-2.5 rounded-xl border border-border-subtle transition-colors cursor-pointer"
+              >
+                View Detailed Breakdown
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Right Block: 2x2 Dynamic Stats Grid */}
+          <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            
+            {/* KPI Card 1: Algo Solved */}
+            <div className="bg-surface-card border border-border-subtle rounded-2xl p-5 flex flex-col justify-between card-hover-effect">
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">Algo Solved</span>
+                  <p className="text-2xl font-bold text-on-surface mt-1">
+                    {stats.dsa_solved} <span className="text-xs text-on-surface-variant">/ {targetDsa}</span>
+                  </p>
+                </div>
+                <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-success/10 text-success">
+                  <Code2 className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="mt-4 space-y-1">
+                <div className="w-full bg-surface-container-high rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-success h-full rounded-full transition-all duration-500" style={{ width: `${dsaPercent}%` }}></div>
+                </div>
+                <span className="text-[10px] text-on-surface-variant block">Review structural coding challenges regularly</span>
+              </div>
+            </div>
+
+            {/* KPI Card 2: Core Subjects */}
+            <div className="bg-surface-card border border-border-subtle rounded-2xl p-5 flex flex-col justify-between card-hover-effect">
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">Core Subjects</span>
+                  <p className="text-2xl font-bold text-on-surface mt-1">{stats.subjects_completed}</p>
+                </div>
+                <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary-fixed-dim/10 text-primary-fixed-dim">
+                  <BookOpen className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="mt-4">
+                <span className="text-[10px] text-primary-fixed-dim font-semibold bg-primary-container/20 border border-primary-container/30 px-2 py-0.5 rounded-full inline-block">
+                  On Track
+                </span>
+                <span className="text-[10px] text-on-surface-variant block mt-2">Active fundamentals modules completed</span>
+              </div>
+            </div>
+
+            {/* KPI Card 3: Weekly Progress */}
+            <div className="bg-surface-card border border-border-subtle rounded-2xl p-5 flex flex-col justify-between card-hover-effect">
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">Weekly Tasks</span>
+                  <p className="text-2xl font-bold text-on-surface mt-1">
+                    {stats.weekly_tasks_completed} <span className="text-xs text-on-surface-variant">/ {stats.weekly_tasks_total}</span>
+                  </p>
+                </div>
+                <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-tertiary-fixed-dim/10 text-tertiary-fixed-dim">
+                  <ClipboardList className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="mt-4 space-y-1">
+                <div className="w-full bg-surface-container-high rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-tertiary-fixed-dim h-full rounded-full transition-all duration-500" style={{ width: `${weeklyTaskPercent}%` }}></div>
+                </div>
+                <span className="text-[10px] text-on-surface-variant block">Keep planning tasks updated to track growth</span>
+              </div>
+            </div>
+
+            {/* KPI Card 4: Resume Score */}
+            <div className="bg-surface-card border border-border-subtle rounded-2xl p-5 flex flex-col justify-between card-hover-effect">
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">Resume ATS Score</span>
+                  <p className="text-2xl font-bold text-on-surface mt-1">{stats.resume_score}%</p>
+                </div>
+                <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-warning/10 text-warning">
+                  <FileText className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="mt-4 space-y-1">
+                <div className="w-full bg-surface-container-high rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-warning h-full rounded-full transition-all duration-500" style={{ width: `${stats.resume_score}%` }}></div>
+                </div>
+                <span className="text-[10px] text-on-surface-variant block">Bullet metrics alignment score</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        {/* Today's Focus Grid - Full Width */}
+        <div className="mt-2">
+          {/* Interactive Checklist */}
+          <div className="w-full bg-surface-card border border-border-subtle rounded-2xl p-6 flex flex-col justify-between">
+            <div>
+              <div className="flex justify-between items-center border-b border-border-subtle/40 pb-3 mb-4">
+                <h3 className="text-sm font-semibold text-on-surface">Today's Focus Tasks</h3>
+                <span className="text-xs text-on-surface-variant font-medium">
+                  {focusItems.filter((i) => i.completed).length} / {focusItems.length} Completed
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-75 overflow-y-auto pr-2 no-scrollbar">
+                {focusItems.map((item) => (
+                  <div
+                    key={item.id} onClick={() => handleToggleTask(item.id)}
+                    className={`flex items-center gap-3 p-3 rounded-xl border border-border-subtle/50 hover:bg-surface-container-low transition-all cursor-pointer ${
+                      item.completed ? "opacity-60 bg-surface-container/40" : ""
+                    }`}
+                  >
+                    <button className="text-primary-fixed-dim transition-colors cursor-pointer shrink-0">
+                      {item.completed ? <CheckSquare className="w-4 h-4 fill-primary-fixed-dim/20" /> : <Square className="w-4 h-4" />}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs text-on-surface font-medium truncate ${item.completed ? "line-through text-on-surface-variant" : ""}`}>
+                        {item.text}
+                      </p>
+                      <span className="text-[9px] bg-background-deep text-on-surface-variant border border-border-subtle font-bold tracking-wider px-1.5 py-0.5 rounded uppercase mt-1 inline-block">
+                        {item.category}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <form onSubmit={handleAddTask} className="mt-4 pt-4 border-t border-border-subtle/40 flex flex-col sm:flex-row items-center gap-2">
+              <input
+                type="text" required placeholder="Add immediate focus target..."
+                value={newItemText} onChange={(e) => setNewItemText(e.target.value)}
+                className="w-full flex-1 bg-surface-container border border-border-subtle rounded-lg py-2 px-3 text-xs text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary-fixed-dim transition-all"
+              />
+              <div className="flex w-full sm:w-auto gap-2">
+                <select
+                  value={newItemCategory} onChange={(e) => setNewItemCategory(e.target.value)}
+                  className="flex-1 sm:flex-none bg-surface-container border border-border-subtle rounded-lg py-2 px-2 text-[10px] font-bold text-on-surface-variant uppercase focus:outline-none cursor-pointer"
+                >
+                  <option value="DSA">DSA</option>
+                  <option value="DBMS">DBMS</option>
+                  <option value="OS">OS</option>
+                  <option value="System Design">SYS</option>
+                  <option value="Resume">CV</option>
+                </select>
+                <button type="submit" className="bg-primary-container hover:bg-primary-container/80 text-on-primary-fixed border border-primary-container/50 p-2 rounded-lg transition-colors cursor-pointer shrink-0">
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        {/* Preparation Feature Navigation Grid */}
+        <div className="mt-2">
+          <h3 className="text-sm font-semibold text-on-surface mb-4">Preparation Modules</h3>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {tileData.map((tile) => {
+              const Icon = tile.icon;
+              const Wrapper = tile.link ? Link : 'div';
+              const wrapperProps = tile.link ? { to: tile.link } : {};
+              return (
+                <Wrapper
+                  key={tile.title}
+                  {...wrapperProps}
+                  className="group flex flex-col justify-between rounded-2xl border border-border-subtle bg-surface-card p-5 shadow-sm transition hover:-translate-y-1 hover:border-outline cursor-pointer"
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-xl"
+                      style={{ background: `${tile.color}15`, color: tile.color }}
+                    >
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    {tile.link ? (
+                      <ChevronRight className="h-4 w-4 text-on-surface-variant transition group-hover:text-on-surface group-hover:translate-x-0.5" />
+                    ) : (
+                      <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-[10px] font-medium text-on-surface-variant border border-border-subtle">Soon</span>
+                    )}
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-semibold text-on-surface">{tile.title}</h2>
+                    <p className="mt-1.5 text-xs leading-relaxed text-on-surface-variant line-clamp-2">{tile.text}</p>
+                  </div>
+                </Wrapper>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* AI Mentor Call-to-Action Action Item Banner */}
+        <div className="mt-2 bg-linear-to-r from-primary-container/10 to-transparent border border-border-subtle rounded-2xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-lg bg-primary-container/20 border border-primary-container/30 flex items-center justify-center text-primary-fixed-dim shrink-0">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-primary-fixed-dim uppercase tracking-wider">AI Mentor Insights • Action Required</h4>
+              <p className="text-sm font-semibold text-on-surface mt-1">Ready for your next targeted interview session?</p>
+              <p className="text-xs text-on-surface-variant mt-0.5 leading-relaxed max-w-2xl">
+                Break down your comprehensive goals into structured milestones via the planner dashboard. For live mock review metrics, direct evaluation checks, and resume optimizations, chat with your AI Mentor.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate("/mentor")}
+            className="bg-primary-container hover:bg-primary-container/80 text-shadow-primary-fixed-dim border-primary-container/30 font-semibold text-xs py-2.5 px-5 rounded-xl shrink-0 flex items-center gap-2 cursor-pointer transition-colors"
+          >
+            <Sparkles className="w-4 h-4" />
+            Chat with Mentor
+          </button>
+        </div>
+
       </div>
     </div>
   );
