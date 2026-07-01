@@ -35,7 +35,7 @@ celery_app.conf.update(
 celery_app.conf.beat_schedule = {
     "process-outbox-every-few-seconds": {
         "task": "app.workers.celery_tasks.process_outbox_task",
-        "schedule": 2.0,
+        "schedule": 30.0,
     },
     "scan-planner-reminders-hourly": {
         "task": "app.workers.celery_tasks.scan_planner_reminders_task",
