@@ -51,7 +51,6 @@ Blueprint is built on five principles:
 | Interview Hub — DSA Engine | 3,632 problems, keyset-paginated, filterable by difficulty/topic/company, per-user solve tracking | Live |
 | Interview Hub — Q&A Engine | 33,807 open-ended questions, filterable by category/skill/role/difficulty | Live |
 | Interview Hub — Quiz Engine | 5,816 MCQs, filterable by section/topic/difficulty, per-user attempt history | Live |
-| Unified Search | Full-text search across DSA, Q&A, and quiz content via PostgreSQL `tsvector` + GIN index | Live |
 | AI Mentor | Context-aware chat (Gemini) grounded in the user's actual progress | Live |
 | Knowledge Vault | Bookmarks, AI insights, and personal notes in one polymorphic store | Live |
 | Notifications | In-app feed + email, driven by a transactional outbox and scheduled reminder jobs | Live |
