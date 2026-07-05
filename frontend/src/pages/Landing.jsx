@@ -65,7 +65,7 @@ export default function Landing() {
         <div className="flex items-center gap-2 group cursor-pointer">
           <Award className="w-6 h-6 text-sky-400 transition-transform duration-300 group-hover:rotate-12" />
           <span className="text-xl font-bold tracking-tight bg-linear-to-r from-white to-slate-300 bg-clip-text text-transparent">
-            PlacementOS
+            Blueprint
           </span>
         </div>
         <div className="flex items-center gap-6">
@@ -124,13 +124,13 @@ export default function Landing() {
             <p className="text-[10px] uppercase font-bold text-slate-500 tracking-widest">
               Trusted by 10,000+ engineers at
             </p>
-            <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-400 font-medium">
+            {/*<div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-400 font-medium">
               {["Google", "Amazon", "Meta", "Netflix", "Microsoft"].map((company) => (
                 <span key={company} className="opacity-50 hover:opacity-100 hover:text-sky-400 transition-all duration-200 cursor-default">
                   {company}
                 </span>
               ))}
-            </div>
+            </div>*/}
           </div>
         </div>
 
@@ -168,7 +168,7 @@ export default function Landing() {
 
       {/* Footer */}
       <footer className="h-16 border-t border-slate-900/60 flex items-center justify-center text-[11px] text-slate-500 relative z-10">
-        © 2026 PlacementOS. All rights reserved.
+        © 2026 Blueprint. All rights reserved.
       </footer>
     </div>
   );

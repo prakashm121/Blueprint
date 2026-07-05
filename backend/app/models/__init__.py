@@ -9,3 +9,6 @@ from app.models.mentor import MentorConversation, MentorMessage
 from app.models.email_verification import EmailVerification
 from app.models.notification import Notification
 from app.models.outbox_event import OutboxEvent
+from app.models.hub import QuizQuestion, InterviewQuestion, DSAProblem
+from app.models.vault import VaultItem
+from app.models.hub_progress import UserQuizAttempt, UserCodingProgress, UserQuestionProgress

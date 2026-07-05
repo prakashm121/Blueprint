@@ -12,9 +12,11 @@ import {
 const tileData = [
   { title: 'Planner', text: 'Organize weekly goals and deadlines in one place.', icon: ClipboardList, link: '/planner', color: '#b4c5ff' },
   { title: 'AI Mentor', text: 'Ask questions, get interview prep help, and refine your resume.', icon: MessageSquare, link: '/mentor', color: '#c0c1ff' },
-  { title: 'Knowledge Vault', text: 'Save notes, flashcards, and topic references for review.', icon: BookOpen, link: null, color: '#10B981' },
-  { title: 'Resume Analyzer', text: 'Upload and analyze your resume to improve your fit.', icon: FileText, link: null, color: '#F59E0B' },
-  { title: 'Interview Hub', text: 'Prepare confidently with company-specific interview questions.', icon: Briefcase, link: null, color: '#d4e4fa' }
+  { title: 'Knowledge Vault', text: 'Save notes, flashcards, and topic references for review.', icon: BookOpen, link: '/vault', color: '#10B981' },
+  { title: 'DSA Practice', text: 'Master data structures and algorithms with curated problems.', icon: Code2, link: '/interview-hub/dsa', color: '#F43F5E' },
+  { title: 'Interview Q&A', text: 'Prepare confidently with company-specific behavioral and technical questions.', icon: Briefcase, link: '/interview-hub/qa', color: '#d4e4fa' },
+  { title: 'Quiz Engine', text: 'Test your knowledge across core subjects with rapid MCQs.', icon: Target, link: '/interview-hub/quiz', color: '#8B5CF6' },
+  { title: 'Resume Analyzer', text: 'Upload and analyze your resume to improve your fit.', icon: FileText, link: null, color: '#F59E0B' }
 ];
 
 export default function Dashboard() {
@@ -47,22 +49,21 @@ export default function Dashboard() {
     overall_readiness: data?.overall_readiness ?? 0,
     weekly_tasks_completed: data?.weekly_tasks_completed ?? 0,
     weekly_tasks_total: data?.weekly_tasks_total ?? 0,
-    upcoming_interviews: data?.upcoming_interviews ?? 0,
     planner_completion: data?.planner_completion ?? 0,
     dsa_solved: data?.dsa_solved ?? 0,
+    dsa_total: data?.dsa_total ?? 200,
     subjects_completed: data?.subjects_completed ?? 0,
     resume_score: data?.resume_score ?? 0,
-    applications_sent: data?.applications_sent ?? 0,
   };
 
   const welcomeName = useMemo(() => {
     if (isLoading) return '…';
     if (isError) return '';
-    return profile.full_name || 'PlacementOS User';
+    return profile.full_name || 'Blueprint User';
   }, [profile.full_name, isError, isLoading]);
 
-  const targetDsa = 200; 
-  const dsaPercent = Math.min((stats.dsa_solved / targetDsa) * 100, 100);
+  const targetDsa = stats.dsa_total; 
+  const dsaPercent = targetDsa > 0 ? Math.min((stats.dsa_solved / targetDsa) * 100, 100) : 0;
   const weeklyTaskPercent = stats.weekly_tasks_total > 0 
     ? (stats.weekly_tasks_completed / stats.weekly_tasks_total) * 100 
     : 0;
@@ -130,7 +131,7 @@ export default function Dashboard() {
             <Target className="w-5 h-5 text-primary-fixed-dim" />
             <div className="text-left">
               <span className="block text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">Target Objective</span>
-              <span className="text-xs text-on-surface font-semibold">{profile.degree || 'Software Engineer (L3)'}</span>
+              <span className="text-xs text-on-surface font-semibold">{profile.target_role || 'Software Engineer (L3)'}</span>
             </div>
           </div>
         </div>

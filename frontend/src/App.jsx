@@ -11,7 +11,11 @@ import CheckEmail from './pages/CheckEmail';
 import VerifyEmail from './pages/VerifyEmail';
 import NotFound from './pages/NotFound';
 import ProtectedRoute from './components/ProtectedRoute';
-
+import DSAEngine from './pages/InterviewHub/DSAEngine';
+import DSAProblemDetail from './pages/InterviewHub/DSAProblemDetail';
+import InterviewQAEngine from './pages/InterviewHub/InterviewQAEngine';
+import QuizEngine from './pages/InterviewHub/QuizEngine';
+import VaultDashboard from './pages/Vault/VaultDashboard';
 function App() {
   return (
     <Router>
@@ -28,6 +32,11 @@ function App() {
           <Route path="/planner" element={<Planner />} />
           <Route path="/mentor" element={<Mentor />} />
           <Route path="/notifications" element={<Notifications />} />
+          <Route path="/interview-hub/dsa" element={<DSAEngine />} />
+          <Route path="/interview-hub/dsa/:id" element={<DSAProblemDetail />} />
+          <Route path="/interview-hub/qa" element={<InterviewQAEngine />} />
+          <Route path="/interview-hub/quiz" element={<QuizEngine />} />
+          <Route path="/vault" element={<VaultDashboard />} />
         </Route>
 
         <Route path="*" element={<NotFound />} />

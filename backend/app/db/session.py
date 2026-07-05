@@ -5,9 +5,9 @@ from app.core.config import settings
 engine = create_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,
-    # Tuned for high-concurrency HTTP traffic (target: 250+ concurrent requests).
-    pool_size=50,
-    max_overflow=150,
+    # Tuned for high-concurrency HTTP traffic based on user requirement
+    pool_size=10,
+    max_overflow=20,
     pool_timeout=15,
     pool_recycle=1800,
     connect_args={"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {},

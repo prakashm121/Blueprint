@@ -73,7 +73,7 @@ export default function Login() {
         <div className="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center text-primary-fixed-dim mb-4 border border-border-subtle">
           <Award className="w-6 h-6" />
         </div>
-        <h2 className="text-xl font-bold tracking-tight text-on-surface">PlacementOS</h2>
+        <h2 className="text-xl font-bold tracking-tight text-on-surface">Blueprint</h2>
         <p className="text-xs text-on-surface-variant mb-8 mt-1 text-center">Sign in to your engineering career tracker</p>
 
         {/* Validation Errors & Alerts */}
