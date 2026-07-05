@@ -332,6 +332,29 @@ Backend is the more mature half: auth, dashboard, planner, the full Interview Hu
 
 ---
 
+## 📸 Platform Screenshots
+
+### Landing & User Dashboard
+| Landing Page | Main Dashboard |
+| :---: | :---: |
+| ![Landing Page](Images/LandingPage.png) | ![Dashboard](Images/Dashboard.png) |
+| **Dashboard Metrics** | **AI Mentor** |
+| ![Dashboard Metrics](Images/Dashboard2.png) | ![AI Mentor](Images/AI%20mentor.png) |
+
+### Interview Hub (Coding & Q&A)
+| DSA Problem List | DSA Workspace |
+| :---: | :---: |
+| ![DSA Hub](Images/DSAHUB1.png) | ![DSA Details](Images/DSAHUB2.png) |
+| **Interview Q&A Bank** | |
+| ![Interview QA](Images/InterviewQA.png) | |
+
+### Interactive Quiz Engine
+| Quiz Dashboard | Category Filters |
+| :---: | :---: |
+| ![Quiz Overview](Images/QUIZ1.png) | ![Quiz Filters](Images/QUIZfilters.png) |
+| **Active Quiz Session (Timer)** | |
+| ![Quiz Timer](Images/Quizwithtimer.png) | |
+  
 ## Contributing
 
 This repository is under active development. Please open an issue or discussion before starting significant work.
