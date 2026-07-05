@@ -313,24 +313,6 @@ Outbox events (`ET.EMAIL_VERIFICATION`, `ET.WELCOME_EMAIL`, `ET.RESUME_ANALYSIS`
 
 ---
 
-## Non-functional requirements
-
-- **Performance:** initial page load ≤ 3s, cached dashboard API ≤ 500ms, CRUD ≤ 300ms, AI responses ≤ 10s
-- **Scalability:** MVP target of 1,000 active users; stateless services, horizontal scaling, Redis caching
-- **Security:** JWT auth with refresh tokens, argon2 password hashing, rate limiting, HTTPS-only, input validation
-- **Availability:** 99% uptime target for MVP
-- **Testing:** 70% backend coverage target; frontend covers critical user flows
-- **Browser support:** latest Chrome, Edge, Firefox, Safari
-- **Accessibility:** keyboard navigation, focus indicators, screen reader support, semantic HTML
-
----
-
-## Project status
-
-Backend is the more mature half: auth, dashboard, planner, the full Interview Hub (DSA/Q&A/quiz with ~43K seeded rows), search, AI mentor, vault, notifications, and the outbox/worker pipeline are all implemented, with resume analysis already stubbed at the event level. Frontend covers the same surface area; resume analysis, GitHub analytics, and company-specific readiness scoring are the near-term roadmap on both sides.
-
----
-
 ## 📸 Platform Screenshots
 
 ### Landing & User Dashboard
