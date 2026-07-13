@@ -227,37 +227,6 @@ export default function DSAProblemDetail() {
               </div>
             </section>
           )}
-
-          {/* Hints */}
-          <section className="space-y-2 pb-6">
-            <h4 className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant/60 mb-2 flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-sm">lightbulb</span>Hints
-            </h4>
-            {[
-              { key: 'h1', label: 'Hint 1 — Brute Force Approach', body: 'Try checking all pairs (i, j) where i ≠ j. What is the time complexity? Can we do better?' },
-              { key: 'h2', label: 'Hint 2 — Optimize with a Hash Map', body: 'Use a hash map to store the value-to-index mapping. For each number, check if (target - num) already exists in the map. This brings it to O(n) time and O(n) space.' },
-            ].map(hint => (
-              <div key={hint.key} className="bg-surface-container border border-border-subtle rounded-xl overflow-hidden">
-                <button
-                  onClick={() => toggleHint(hint.key)}
-                  className="w-full flex items-center justify-between p-4 text-xs font-semibold text-on-surface hover:bg-surface-container-high transition-colors text-left"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-amber-400 text-base">lightbulb</span>
-                    {hint.label}
-                  </span>
-                  <span className={`material-symbols-outlined text-base text-on-surface-variant transition-transform duration-200 ${hintsOpen[hint.key] ? 'rotate-90' : ''}`}>
-                    chevron_right
-                  </span>
-                </button>
-                {hintsOpen[hint.key] && (
-                  <div className="px-4 pb-4 pt-1 bg-surface-container-low border-t border-border-subtle text-xs text-on-surface-variant leading-relaxed">
-                    {hint.body}
-                  </div>
-                )}
-              </div>
-            ))}
-          </section>
         </div>
 
         {/* Right: Notes + Actions */}

@@ -2,7 +2,7 @@
 
 import hashlib
 from datetime import date, timedelta
-from typing import Optional
+from typing import Optional,List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status as http_status
 from pydantic import BaseModel as PydanticBase
@@ -13,7 +13,7 @@ from app.api.deps import get_current_user
 from app.core.cache import delete_cache, get_cache, set_cache
 from app.db.session import get_db
 from app.models.hub import DSAProblem, InterviewQuestion, QuizQuestion
-from app.models.hub_progress import UserCodingProgress
+from app.models.hub_progress import UserCodingProgress, UserQuizAttempt
 from app.models.user import User
 
 router = APIRouter()
@@ -251,7 +251,151 @@ def list_quiz_questions(
     set_cache(cache_key, response_data, 3600)   # 1 h
     return response_data
 
-
+# ─────────────────────────────────────────────────────────────────────────────
+# Quiz MCQ — attempt submission & server-side evaluation
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+class QuizAnswerItem(PydanticBase):
+    quiz_id:         int
+    selected_option: str   # "A" | "B" | "C" | "D"
+ 
+ 
+class QuizAttemptRequest(PydanticBase):
+    answers: List[QuizAnswerItem]
+ 
+ 
+@router.post("/quiz/attempt", status_code=http_status.HTTP_200_OK)
+def submit_quiz_attempt(
+    body:         QuizAttemptRequest,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
+):
+    """
+    Receive all selected answers for a completed quiz session, evaluate them
+    server-side against correct_ans, persist one UserQuizAttempt row per
+    question, and return a per-question breakdown plus aggregate stats.
+ 
+    The client never receives correct_ans from the list endpoint, so
+    evaluation must happen here — this is the single source of truth.
+    """
+    if not body.answers:
+        raise HTTPException(status_code=400, detail="No answers submitted.")
+ 
+    submitted_ids = [a.quiz_id for a in body.answers]
+ 
+    # Validate submitted option values
+    valid_options = {"A", "B", "C", "D"}
+    for answer in body.answers:
+        if answer.selected_option.upper() not in valid_options:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid option '{answer.selected_option}' for quiz_id {answer.quiz_id}. Must be A, B, C, or D.",
+            )
+ 
+    # Fetch all referenced questions in a single query
+    questions = (
+        db.query(QuizQuestion)
+        .filter(QuizQuestion.id.in_(submitted_ids))
+        .all()
+    )
+ 
+    if len(questions) != len(submitted_ids):
+        found_ids    = {q.id for q in questions}
+        missing_ids  = set(submitted_ids) - found_ids
+        raise HTTPException(
+            status_code=404,
+            detail=f"Quiz question(s) not found: {sorted(missing_ids)}",
+        )
+ 
+    # Build a lookup map for O(1) access
+    question_map = {q.id: q for q in questions}
+ 
+    # Evaluate answers and bulk-insert attempt rows
+    results       = []
+    correct_count = 0
+    attempt_rows  = []
+ 
+    for answer in body.answers:
+        q               = question_map[answer.quiz_id]
+        selected        = answer.selected_option.upper()
+        correct         = q.correct_ans.upper()
+        is_correct      = selected == correct
+        correct_count  += int(is_correct)
+ 
+        attempt_rows.append(
+            UserQuizAttempt(
+                user_id         = current_user.id,
+                quiz_id         = q.id,
+                selected_option = selected,
+                is_correct      = is_correct,
+            )
+        )
+ 
+        results.append({
+            "quiz_id":         q.id,
+            "question":        q.question,
+            "selected_option": selected,
+            "correct_ans":     correct,
+            "is_correct":      is_correct,
+            "option_a":        q.option_a,
+            "option_b":        q.option_b,
+            "option_c":        q.option_c,
+            "option_d":        q.option_d,
+        })
+ 
+    db.bulk_save_objects(attempt_rows)
+    db.commit()
+ 
+    # Invalidate the quiz stats cache so the sidebar refreshes
+    delete_cache(f"quiz:stats:{current_user.id}")
+ 
+    total = len(body.answers)
+    return {
+        "total":         total,
+        "correct":       correct_count,
+        "incorrect":     total - correct_count,
+        "score_pct":     round((correct_count / total) * 100, 1) if total else 0,
+        "results":       results,
+    }
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# Quiz Stats  (per-user)
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+@router.get("/stats/quiz")
+def get_quiz_stats(
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
+):
+    """Aggregate lifetime quiz stats for the current user."""
+    cache_key = f"quiz:stats:{current_user.id}"
+    cached    = get_cache(cache_key)
+    if cached:
+        return cached
+ 
+    total_attempted = (
+        db.query(func.count(UserQuizAttempt.id))
+        .filter(UserQuizAttempt.user_id == current_user.id)
+        .scalar() or 0
+    )
+    total_correct = (
+        db.query(func.count(UserQuizAttempt.id))
+        .filter(
+            UserQuizAttempt.user_id    == current_user.id,
+            UserQuizAttempt.is_correct == True,          # noqa: E712
+        )
+        .scalar() or 0
+    )
+ 
+    data = {
+        "total_attempted": total_attempted,
+        "total_correct":   total_correct,
+        "total_incorrect": total_attempted - total_correct,
+        "accuracy_pct":    round((total_correct / total_attempted) * 100, 1) if total_attempted else 0,
+    }
+    set_cache(cache_key, data, 300)   # 5 min, matches DSA stats TTL
+    return data
 # ─────────────────────────────────────────────────────────────────────────────
 # DSA Progress  (per-user)
 # ─────────────────────────────────────────────────────────────────────────────

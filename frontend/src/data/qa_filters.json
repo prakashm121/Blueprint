@@ -37,17 +37,6 @@
         "Hard"
     ],
     "role_categories": {
-        "DevOps Engineer": [
-            "DevOps",
-            "Security & Networking"
-        ],
-        "Data Scientist": [
-            "AI & ML",
-            "Data Analytics & BI"
-        ],
-        "HR": [
-            "Behavioral"
-        ],
         "Backend Engineer": [
             "Backend",
             "Core Subjects",
@@ -56,53 +45,85 @@
             "Programming Languages",
             "System Design"
         ],
-        "Full Stack Engineer": [
-            "Backend",
-            "Blockchain",
-            "Core Subjects",
-            "DSA",
-            "Database",
-            "Emerging Tech",
-            "Frontend",
-            "Programming Languages",
-            "System Design",
-            "UI/UX & Design"
-        ],
-        "QA Engineer": [
-            "Testing & QA"
-        ],
-        "Software Engineer": [
-            "Backend",
-            "Blockchain",
-            "Core Subjects",
-            "DSA",
-            "Database",
-            "DevOps",
-            "Emerging Tech",
-            "Programming Languages",
-            "Security & Networking",
-            "System Design",
-            "Testing & QA"
-        ],
-        "Frontend Engineer": [
-            "Core Subjects",
-            "DSA",
-            "Frontend",
-            "Programming Languages",
-            "UI/UX & Design"
-        ],
-        "ML Engineer": [
-            "AI & ML",
-            "DSA",
-            "Emerging Tech"
-        ],
-        "Security Engineer": [
-            "Security & Networking"
-        ],
         "Data Engineer": [
             "AI & ML",
             "Database",
-            "Data Analytics & BI"
+            "Data Analytics & BI",
+            "Programming Languages",
+            "System Design",
+            "DevOps",
+            "Core Subjects"
+        ],
+        "Data Scientist": [
+            "AI & ML",
+            "Data Analytics & BI",
+            "Database",
+            "Programming Languages",
+            "Behavioral"
+        ],
+        "DevOps Engineer": [
+            "DevOps",
+            "Security & Networking",
+            "Programming Languages",
+            "Core Subjects"
+        ],
+        "Frontend Engineer": [
+            "Frontend",
+            "Programming Languages",
+            "DSA",
+            "Core Subjects",
+            "UI/UX & Design"
+        ],
+        "Full Stack Engineer": [
+            "Frontend",
+            "Backend",
+            "Programming Languages",
+            "Database",
+            "DSA",
+            "Core Subjects",
+            "System Design",
+            "DevOps",
+            "UI/UX & Design",
+            "Blockchain",
+            "Emerging Tech"
+        ],
+        "HR": [
+            "Behavioral"
+        ],
+        "ML Engineer": [
+            "AI & ML",
+            "Programming Languages",
+            "DSA",
+            "Database",
+            "Backend",
+            "System Design",
+            "Core Subjects",
+            "Emerging Tech"
+        ],
+        "QA Engineer": [
+            "Testing & QA",
+            "Programming Languages",
+            "Database",
+            "Behavioral"
+        ],
+        "Security Engineer": [
+            "Security & Networking",
+            "Programming Languages",
+            "Backend",
+            "Core Subjects"
+        ],
+        "Software Engineer": [
+            "Backend",
+            "Programming Languages",
+            "DSA",
+            "Core Subjects",
+            "Database",
+            "System Design",
+            "DevOps",
+            "Security & Networking",
+            "Testing & QA",
+            "Blockchain",
+            "Emerging Tech"
         ],
         "UI/UX Designer": [
             "UI/UX & Design"
