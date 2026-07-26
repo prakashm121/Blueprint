@@ -320,14 +320,18 @@ Outbox events (`ET.EMAIL_VERIFICATION`, `ET.WELCOME_EMAIL`, `ET.RESUME_ANALYSIS`
 ## 📸 Platform Screenshots
 
 ### Landing Page
-| Hero Section | Feature Modules | How It Works |
-| :---: | :---: | :---: |
-| ![Landing 1](Images/LandingPage1.png) | ![Landing 2](Images/LandingPage2.png) | ![Landing 3](Images/LandingPage3.png) |
+| Hero Section | Feature Modules |
+| :---: | :---: |
+| ![Landing 1](Images/LandingPage1.png) | ![Landing 2](Images/LandingPage2.png) |
+| **How It Works** | |
+| ![Landing 3](Images/LandingPage3.png) | |
 
 ### User Dashboard & AI Mentor
-| Main Dashboard | Dashboard Metrics | AI Mentor |
-| :---: | :---: | :---: |
-| ![Dashboard](Images/Dashboard1.png) | ![Dashboard Metrics](Images/Dashboard2.png) | ![AI Mentor](Images/AI%20mentor.png) |
+| Main Dashboard | Dashboard Metrics |
+| :---: | :---: |
+| ![Dashboard](Images/Dashboard1.png) | ![Dashboard Metrics](Images/Dashboard2.png) |
+| **AI Mentor** | |
+| ![AI Mentor](Images/AI%20mentor.png) | |
 
 ### Interview Hub (Coding & Q&A)
 | DSA Problem List | DSA Workspace |
