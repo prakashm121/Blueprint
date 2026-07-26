@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { api } from '../../api';
 
 const DIFF_COLORS = {
@@ -42,8 +42,18 @@ export default function DSAProblemDetail() {
     load();
   }, [id]);
 
-  const handleAddNote = () => {
-    if (!notes.trim()) return;
+  const handleAddNote = async () => {
+    if (!notes.trim() || !problem) return;
+    // Persist notes to the Knowledge Vault
+    try {
+      await api.post('/api/v1/vault/', {
+        item_type: 'PERSONAL_NOTE',
+        reference_type: 'DSA',
+        reference_id: problem.id,
+        title: `Notes: ${problem.title}`,
+        content: notes.trim(),
+      });
+    } catch { /* silent — store locally as fallback */ }
     const date = new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).toUpperCase();
     setSavedNotes(prev => [{ text: notes, date }, ...prev]);
     setNotes('');
@@ -65,7 +75,7 @@ export default function DSAProblemDetail() {
     if (!problem) return;
     try {
       await api.post('/api/v1/vault/', {
-        item_type: 'DSA',
+        item_type: 'BOOKMARK',
         reference_type: 'DSA',
         reference_id: problem.id,
         title: problem.title,
@@ -220,9 +230,15 @@ export default function DSAProblemDetail() {
               </h4>
               <div className="flex flex-wrap gap-2">
                 {topics.map(tag => (
-                  <span key={tag} className="px-3 py-1 bg-surface-container-low border border-border-subtle rounded-lg text-xs text-on-surface hover:border-primary/40 hover:text-primary transition-colors cursor-pointer">
+                  <Link
+                    key={tag}
+                    to={`/mentor?teach=${encodeURIComponent(tag)}`}
+                    className="px-3 py-1 bg-surface-container-low border border-border-subtle rounded-lg text-xs text-on-surface hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-colors cursor-pointer flex items-center gap-1"
+                    title={`Ask AI to teach: ${tag}`}
+                  >
                     {tag}
-                  </span>
+                    <span className="material-symbols-outlined text-[10px] opacity-50">school</span>
+                  </Link>
                 ))}
               </div>
             </section>
@@ -290,16 +306,23 @@ export default function DSAProblemDetail() {
             )}
           </section>
 
-          {/* AI Insight */}
+          {/* Ask AI */}
           <section className="rounded-xl p-4 relative overflow-hidden border border-border-subtle" style={{ background: 'rgba(30,41,59,0.7)', backdropFilter: 'blur(12px)' }}>
             <div className="absolute -right-4 -top-4 w-20 h-20 bg-primary/10 rounded-full blur-2xl pointer-events-none"></div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="material-symbols-outlined text-primary text-lg">bolt</span>
-              <span className="text-xs font-bold text-primary uppercase tracking-wider">AI Insight</span>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="material-symbols-outlined text-primary text-lg">school</span>
+              <span className="text-xs font-bold text-primary uppercase tracking-wider">AI Teacher</span>
             </div>
-            <p className="text-xs text-on-surface-variant leading-relaxed italic">
-              "For high-level roles, interviewers often follow up '{problem?.title}' with variations like 3Sum or 4Sum. Mastering the hash map pattern here is a critical foundation."
+            <p className="text-xs text-on-surface-variant leading-relaxed mb-3">
+              Want a personalized explanation of this problem's core concepts and patterns?
             </p>
+            <Link
+              to={`/mentor?teach=${encodeURIComponent(problem?.title || '')}`}
+              className="flex items-center justify-center gap-2 w-full py-2 bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-white text-xs font-bold rounded-xl transition-all"
+            >
+              <span className="material-symbols-outlined text-sm">auto_awesome</span>
+              Ask AI to Teach This
+            </Link>
           </section>
         </div>
       </div>

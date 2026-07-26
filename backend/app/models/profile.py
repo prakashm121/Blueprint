@@ -1,5 +1,10 @@
+"""
+profile.py — Extended student profile (college, degree, CGPA, social links).
+One-to-one with User.
+"""
 from sqlalchemy import Column, Integer, String, SmallInteger, Numeric, Text, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from app.db.session import Base
 
@@ -22,5 +27,9 @@ class Profile(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     version = Column(Integer, default=1)
+    
+    # Roadmap Caching (Stored in DB to persist across server restarts)
+    roadmap_target_role = Column(String(100), nullable=True)
+    roadmap_data = Column(JSONB, nullable=True)
 
     user = relationship("User", back_populates="profile")

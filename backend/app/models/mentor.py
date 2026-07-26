@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -25,5 +25,9 @@ class MentorMessage(Base):
     role = Column(String(20), nullable=False)  # user | assistant
     content = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_mm_conv_created", "conversation_id", "created_at"),
+    )
 
     conversation = relationship("MentorConversation", back_populates="messages")

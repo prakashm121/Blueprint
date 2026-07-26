@@ -1,23 +1,51 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Lock, User, LogIn, ArrowLeft, Award } from 'lucide-react';
-import { api } from '../api';
+import { Mail, Lock, LogIn, ArrowLeft, Award } from 'lucide-react';
+import { api } from '../../api';
+import { useAuthStore } from '../../store/authStore';
 
-export default function Register() {
+export default function Login() {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({ full_name: '', email: '', password: '' });
+  const setAuth = useAuthStore((state) => state.setAuth);
+  
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [resendMsg, setResendMsg] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const handleResend = async () => {
+    if (!email) return;
+    try {
+      await api.post('/api/v1/auth/resend-verification', { email });
+      setResendMsg('Verification email sent. Check your inbox.');
+    } catch {
+      setResendMsg('Could not resend. Try again later.');
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setResendMsg('');
     setError('');
     setLoading(true);
+    
     try {
-      await api.post('/api/v1/auth/register', formData);
-      navigate(`/check-email?email=${encodeURIComponent(formData.email)}`);
+      const response = await api.post('/api/v1/auth/login', { email, password });
+      const token = response.data?.access_token;
+      if (!token) {
+        throw new Error('No access token returned');
+      }
+      setAuth({ email }, token);
+      const me = await api.get('/api/v1/auth/me');
+      navigate(me.data.onboarding_completed ? '/dashboard' : '/onboarding', { replace: true });
     } catch (err) {
-      setError(err.response?.data?.detail || 'Registration failed');
+      const detail = err.response?.data?.detail;
+      if (err.response?.status === 403) {
+        setError(detail || 'Please verify your email first.');
+      } else {
+        setError(detail || err.message || 'Login failed');
+      }
     } finally {
       setLoading(false);
     }
@@ -46,42 +74,30 @@ export default function Register() {
           <Award className="w-6 h-6" />
         </div>
         <h2 className="text-xl font-bold tracking-tight text-on-surface">Blueprint</h2>
-        <p className="text-xs text-on-surface-variant mb-8 mt-1 text-center">Create your engineering career planning account</p>
+        <p className="text-xs text-on-surface-variant mb-8 mt-1 text-center">Sign in to your engineering career tracker</p>
 
         {/* Validation Errors & Alerts */}
         {error && (
           <div className="w-full bg-red-500/10 border border-red-500/20 text-red-200 text-xs rounded-lg p-3 mb-4">
             {error}
+            {error.toLowerCase().includes('verify') && (
+              <button type="button" onClick={handleResend} className="mt-2 block text-primary-fixed-dim hover:underline font-medium cursor-pointer">
+                Resend verification email
+              </button>
+            )}
+          </div>
+        )}
+        {resendMsg && (
+          <div className="w-full bg-surface-container border border-border-subtle text-on-surface text-xs rounded-lg p-3 mb-4">
+            {resendMsg}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="w-full space-y-4">
-          
-          {/* Full Name field */}
-          <div className="space-y-1.5">
-            <label className="text-[11px] uppercase tracking-wider font-bold text-on-surface-variant" htmlFor="name-input">
-              Full Name
-            </label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60">
-                <User className="w-4 h-4" />
-              </span>
-              <input
-                id="name-input"
-                type="text"
-                required
-                value={formData.full_name}
-                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                placeholder="Alex Morgan"
-                className="w-full bg-surface-container border border-border-subtle rounded-lg py-2.5 pl-10 pr-4 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-outline transition-colors"
-              />
-            </div>
-          </div>
-
           {/* Email field */}
           <div className="space-y-1.5">
             <label className="text-[11px] uppercase tracking-wider font-bold text-on-surface-variant" htmlFor="email-input">
-              Email
+              Academic Email
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60">
@@ -91,8 +107,8 @@ export default function Register() {
                 id="email-input"
                 type="email"
                 required
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@university.edu"
                 className="w-full bg-surface-container border border-border-subtle rounded-lg py-2.5 pl-10 pr-4 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-outline transition-colors"
               />
@@ -101,9 +117,14 @@ export default function Register() {
 
           {/* Password field */}
           <div className="space-y-1.5">
-            <label className="text-[11px] uppercase tracking-wider font-bold text-on-surface-variant" htmlFor="password-input">
-              Password
-            </label>
+            <div className="flex justify-between items-center">
+              <label className="text-[11px] uppercase tracking-wider font-bold text-on-surface-variant" htmlFor="password-input">
+                Password
+              </label>
+              <a href="#" className="text-[10px] text-primary-fixed-dim hover:underline font-semibold">
+                Forgot password?
+              </a>
+            </div>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60">
                 <Lock className="w-4 h-4" />
@@ -112,8 +133,8 @@ export default function Register() {
                 id="password-input"
                 type="password"
                 required
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 className="w-full bg-surface-container border border-border-subtle rounded-lg py-2.5 pl-10 pr-4 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-outline transition-colors"
               />
@@ -131,7 +152,7 @@ export default function Register() {
             ) : (
               <>
                 <LogIn className="w-4 h-4" />
-                Create account
+                Sign In
               </>
             )}
           </button>
@@ -143,11 +164,11 @@ export default function Register() {
             <div className="w-full border-t border-border-subtle/50"></div>
           </div>
           <span className="relative bg-surface-card px-3 text-[10px] text-on-surface-variant font-bold uppercase tracking-widest z-10">
-            or signup with
+            or continue with
           </span>
         </div>
 
-        {/* Custom Inline Social SSO Buttons */}
+        {/* Custom Inline Social SSO Buttons (Zero Packages Needed) */}
         <div className="grid grid-cols-2 gap-3 w-full">
           {/* Native GitHub Inline SVG */}
           <button
@@ -176,9 +197,9 @@ export default function Register() {
         </div>
 
         <p className="text-xs text-on-surface-variant text-center mt-6">
-          Already have an account?{" "}
-          <Link to="/login" className="font-semibold text-primary-fixed-dim hover:underline">
-            Login
+          Don't have an account?{" "}
+          <Link to="/register" className="font-semibold text-primary-fixed-dim hover:underline">
+            Create an account
           </Link>
         </p>
       </div>

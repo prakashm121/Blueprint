@@ -1,3 +1,4 @@
+// Axios instance with auth token injected on every request.
 import axios from 'axios'
 import { useAuthStore } from './store/authStore';
 

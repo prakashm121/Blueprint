@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Index
 from sqlalchemy.sql import func
 from app.db.session import Base
 
@@ -14,3 +14,7 @@ class PlannerGeneration(Base):
     error_message = Column(String(500), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_pg_user_status", "user_id", "status"),
+    )

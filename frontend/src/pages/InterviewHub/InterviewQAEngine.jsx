@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { api } from '../../api';
 import qaData from '../../data/qa_filters.json';
 
@@ -31,11 +31,16 @@ export default function InterviewQAEngine() {
 
   const [questions, setQuestions] = useState([]);
   const [selectedQuestion, setSelectedQuestion] = useState(null);
-  
+  const [nextCursor, setNextCursor] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loadingList, setLoadingList] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [error, setError] = useState(null);
   const [revealedAnswer, setRevealedAnswer] = useState(false);
+  const [bookmarked, setBookmarked] = useState(false);
+  const [bookmarking, setBookmarking] = useState(false);
+  const [markingReviewed, setMarkingReviewed] = useState(false);
 
   // Combine the DB roles
   const visibleRoles = qaData.roles;
@@ -90,7 +95,10 @@ export default function InterviewQAEngine() {
     api.get('/api/v1/hub/interview', { params })
       .then(res => {
         const dataItems = res.data?.items || res.data || [];
+        const nc = res.data?.next_cursor ?? 0;
         setQuestions(dataItems);
+        setNextCursor(nc);
+        setHasMore(dataItems.length === 20 && nc != null);
         if (dataItems.length > 0) {
           loadQuestionDetails(dataItems[0].id);
         } else {
@@ -101,33 +109,80 @@ export default function InterviewQAEngine() {
       .finally(() => setLoadingList(false));
   }, [activeRole, activeCategory, activeSkill, activeDifficulty]);
 
+  const loadMore = () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const params = {
+      limit: 20,
+      last_id: nextCursor,
+      ...(activeRole && { role: activeRole }),
+      ...(activeCategory && { category: activeCategory }),
+      ...(activeSkill && { skill: activeSkill }),
+      ...(activeDifficulty && { difficulty: activeDifficulty }),
+    };
+    api.get('/api/v1/hub/interview', { params })
+      .then(res => {
+        const newItems = res.data?.items || [];
+        const nc = res.data?.next_cursor ?? 0;
+        setQuestions(prev => [...prev, ...newItems]);
+        setNextCursor(nc);
+        setHasMore(newItems.length === 20 && nc != null);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingMore(false));
+  };
+
   const loadQuestionDetails = (id) => {
     setLoadingDetail(true);
     setRevealedAnswer(false);
+    setBookmarked(false);
     api.get(`/api/v1/hub/interview/${id}`)
-      .then(res => {
-        setSelectedQuestion(res.data);
-      })
+      .then(res => { setSelectedQuestion(res.data); })
       .catch(() => setError('Failed to sync complete item body structure.'))
       .finally(() => setLoadingDetail(false));
   };
 
+  const saveToVault = async (q, itemType = 'BOOKMARK') => {
+    try {
+      await api.post('/api/v1/vault/', {
+        item_type: itemType,
+        reference_type: 'INTERVIEW',
+        reference_id: q.id,
+        title: q.title,
+        content: q.body || '',
+      });
+    } catch { /* silent */ }
+  };
+
+  const handleBookmark = async () => {
+    if (!selectedQuestion || bookmarking) return;
+    setBookmarking(true);
+    await saveToVault(selectedQuestion, 'BOOKMARK');
+    setBookmarked(true);
+    setBookmarking(false);
+  };
+
+  const handleMarkReviewedAndNext = async () => {
+    if (!selectedQuestion || markingReviewed) return;
+    setMarkingReviewed(true);
+    await saveToVault(selectedQuestion, 'BOOKMARK');
+    const curPos = questions.findIndex(x => x.id === selectedQuestion.id);
+    if (curPos !== -1 && curPos < questions.length - 1) {
+      loadQuestionDetails(questions[curPos + 1].id);
+    }
+    setMarkingReviewed(false);
+  };
+
   return (
     <div className="bg-background-deep text-on-surface font-body-base antialiased min-h-screen">
-      <div className="md:pl-64 flex flex-col min-h-screen">
+      <div className="flex flex-col min-h-screen">
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
           
           {/* Section Navigation Header Row */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-border-subtle">
             <div>
-              <h2 className="text-2xl font-bold text-on-surface tracking-tight">Interview Hub</h2>
+              <h2 className="text-2xl font-bold text-on-surface tracking-tight">Interview Q&A</h2>
               <p className="text-xs text-on-surface-variant">Review advanced target technical query maps across domain contexts.</p>
-            </div>
-            
-            <div className="flex bg-surface-container-low p-1 rounded-xl border border-border-subtle self-start lg:self-center gap-1">
-              <button onClick={() => navigate('/interview-hub/quiz')} className="px-4 py-1.5 rounded-lg text-xs font-medium text-on-surface-variant hover:text-on-surface transition-all">Quiz</button>
-              <button className="px-4 py-1.5 rounded-lg text-xs font-bold text-primary bg-primary/10 border border-primary/20 shadow-sm transition-all">Interview Q&A</button>
-              <button onClick={() => navigate('/interview-hub/dsa')} className="px-4 py-1.5 rounded-lg text-xs font-medium text-on-surface-variant hover:text-on-surface transition-all">Coding Problems</button>
             </div>
           </div>
 
@@ -283,6 +338,15 @@ export default function InterviewQAEngine() {
                   );
                 })
               )}
+              {hasMore && (
+                <button
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  className="w-full py-2 text-xs font-semibold text-primary border border-primary/20 rounded-xl hover:bg-primary/10 transition-all disabled:opacity-50"
+                >
+                  {loadingMore ? 'Loading…' : 'Load More'}
+                </button>
+              )}
             </div>
 
             {/* Right Card Panel Space Workspace Container */}
@@ -303,12 +367,25 @@ export default function InterviewQAEngine() {
                       <p className="text-[11px] text-on-surface-variant">Complexity Index: <span className="text-on-surface font-semibold">{selectedQuestion.difficulty}</span></p>
                     </div>
                     <div className="flex gap-1.5">
-                      <button className="p-1.5 bg-surface-container-low border border-border-subtle rounded-lg text-on-surface-variant hover:text-on-surface transition-colors">
-                        <span className="material-symbols-outlined text-sm block">bookmark</span>
+                      <button
+                        onClick={handleBookmark}
+                        disabled={bookmarking || bookmarked}
+                        title="Save to Vault"
+                        className={`p-1.5 border rounded-lg transition-colors ${
+                          bookmarked
+                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                            : 'bg-surface-container-low border-border-subtle text-on-surface-variant hover:text-on-surface'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-sm block">{bookmarked ? 'bookmark_added' : 'bookmark'}</span>
                       </button>
-                      <button className="p-1.5 bg-surface-container-low border border-border-subtle rounded-lg text-on-surface-variant hover:text-on-surface transition-colors">
-                        <span className="material-symbols-outlined text-sm block">flag</span>
-                      </button>
+                      <Link
+                        to={`/mentor?teach=${encodeURIComponent(selectedQuestion?.title || '')}`}
+                        title="Ask AI to teach this"
+                        className="p-1.5 bg-surface-container-low border border-border-subtle rounded-lg text-on-surface-variant hover:text-primary hover:border-primary/30 transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-sm block">school</span>
+                      </Link>
                     </div>
                   </div>
 
@@ -352,22 +429,19 @@ export default function InterviewQAEngine() {
 
                   {revealedAnswer && (
                     <div className="flex items-center justify-end gap-2 pt-4 border-t border-border-subtle/40">
-                      <button 
+                      <button
                         onClick={() => setRevealedAnswer(false)}
                         className="px-3 py-1.5 text-[11px] font-medium text-on-surface-variant hover:text-on-surface transition-all"
                       >
                         Collapse Solution
                       </button>
-                      <button 
-                        onClick={() => {
-                          const curPos = questions.findIndex(x => x.id === selectedQuestion.id);
-                          if (curPos !== -1 && curPos < questions.length - 1) {
-                            loadQuestionDetails(questions[curPos + 1].id);
-                          }
-                        }}
-                        className="px-4 py-1.5 bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-white text-[11px] font-bold rounded-xl transition-all flex items-center gap-1"
+                      <button
+                        onClick={handleMarkReviewedAndNext}
+                        disabled={markingReviewed}
+                        className="px-4 py-1.5 bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-white text-[11px] font-bold rounded-xl transition-all flex items-center gap-1 disabled:opacity-50"
                       >
-                        Mark Reviewed & Next <span className="material-symbols-outlined text-xs">done_all</span>
+                        {markingReviewed ? 'Saving…' : 'Mark Reviewed & Next'}
+                        <span className="material-symbols-outlined text-xs">done_all</span>
                       </button>
                     </div>
                   )}

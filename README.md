@@ -118,14 +118,18 @@ Blueprint/
 ├── frontend/                       # React + Vite SPA
 │   └── src/
 │       ├── main.jsx / App.jsx / api.js
-│       ├── components/ProtectedRoute.jsx
+│       ├── components/             # Layout.jsx, Sidebar.jsx, ProtectedRoute.jsx
 │       ├── data/                   # filters.json, qa_filters.json, quiz_filters.json
 │       │                           #   — static mirror of backend Redis `meta:*` keys
 │       ├── pages/
-│       │   ├── Landing / Register / Login / CheckEmail / VerifyEmail
-│       │   ├── Onboarding / Dashboard / Planner / Mentor / Notifications
-│       │   ├── InterviewHub/ (DSAEngine, DSAProblemDetail, InterviewQAEngine, QuizEngine)
-│       │   └── Vault/VaultDashboard
+│       │   ├── Auth/               # Login, Register, CheckEmail, VerifyEmail
+│       │   ├── Landing/            # Landing page
+│       │   ├── Dashboard/          # Dashboard
+│       │   ├── Planner/            # Weekly Planner
+│       │   ├── Mentor/             # AI Mentor
+│       │   ├── InterviewHub/       # DSAEngine, InterviewQAEngine, QuizEngine
+│       │   ├── Vault/              # VaultDashboard
+│       │   └── ...                 # ResumeAnalyser, Onboarding, Notifications, Profile, Roadmap, Misc
 │       └── store/authStore.js      # Zustand — tokens, user, login/logout
 │
 └── backend/                        # FastAPI service

@@ -40,7 +40,7 @@ class DashboardSummary(BaseModel):
     focus_tasks: list[DashboardTask] = []
 
 
-@router.get("/", response_model=DashboardSummary)
+@router.get("", response_model=DashboardSummary)
 def get_dashboard(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),

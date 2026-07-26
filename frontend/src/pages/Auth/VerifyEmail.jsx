@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../api';
+import { api } from '../../api';
 import { CheckCircle, XCircle, Loader2, ArrowLeft } from 'lucide-react';
 
 export default function VerifyEmail() {

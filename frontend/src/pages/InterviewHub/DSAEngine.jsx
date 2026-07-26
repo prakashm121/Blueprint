@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { api } from '../../api';
 import filterData from '../../data/filters.json';
 
@@ -30,6 +30,8 @@ function ProblemCard({ problem, onOpen, companyFilter }) {
   
   const topics = rawTopics.slice(0, 2);
   const acceptance = problem.acRate ? `${parseFloat(problem.acRate).toFixed(1)}%` : '—';
+  // Use first topic as the AI teach target
+  const firstTopic = rawTopics[0] || problem.title || '';
 
   return (
     <div
@@ -53,9 +55,15 @@ function ProblemCard({ problem, onOpen, companyFilter }) {
           
           <div className="flex flex-wrap items-center gap-y-1.5 gap-x-2 text-xs text-on-surface-variant">
             {topics.map(t => (
-              <span key={t} className="px-2 py-0.5 bg-surface-container-low rounded border border-border-subtle text-[11px]">
+              <Link
+                key={t}
+                to={`/mentor?teach=${encodeURIComponent(t)}`}
+                onClick={e => e.stopPropagation()}
+                className="px-2 py-0.5 bg-surface-container-low rounded border border-border-subtle text-[11px] hover:border-primary/40 hover:text-primary transition-colors"
+                title={`Ask AI to teach: ${t}`}
+              >
                 {t}
-              </span>
+              </Link>
             ))}
             {topics.length > 0 && <span className="text-border-subtle">•</span>}
             <span>Acceptance: <span className="text-on-surface font-medium">{acceptance}</span></span>
@@ -180,40 +188,48 @@ export default function DSAEngine() {
   }, [hasMore, nextCursor, fetchProblems]);
 
   return (
-    // 1. Lock the outermost wrapper to h-screen and prevent overflow
-    <div className="bg-background-deep text-on-surface font-body-base antialiased h-screen overflow-hidden flex flex-col">
-      <div className="md:pl-64 flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden">
+      <main className="flex-1 p-4 md:p-6 max-w-7xl w-full mx-auto flex flex-col gap-4 md:gap-6 min-h-0">
         
-        {/* 2. Make the main workspace fill remaining space but never overflow itself (min-h-0 is crucial) */}
-        <main className="flex-1 p-6 max-w-7xl w-full mx-auto flex flex-col space-y-6 min-h-0">
-          
-          {/* Main Title Header (shrink-0 ensures it never gets squished) */}
-          <div className="shrink-0 flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-border-subtle">
-            <div>
-              <h2 className="text-2xl font-bold text-on-surface tracking-tight">Interview Hub</h2>
-              <p className="text-xs text-on-surface-variant">Master technical rounds with curated roadmaps.</p>
-            </div>
-            
-            {/* View Selector Tabs */}
-            <div className="flex bg-surface-container-low p-1 rounded-xl border border-border-subtle self-start lg:self-center gap-1">
-              <button onClick={() => navigate('/interview-hub/quiz')} className="px-4 py-1.5 rounded-lg text-xs font-medium text-on-surface-variant hover:text-on-surface transition-all">Quiz</button>
-              <button onClick={() => navigate('/interview-hub/qa')} className="px-4 py-1.5 rounded-lg text-xs font-medium text-on-surface-variant hover:text-on-surface transition-all">Interview Q&A</button>
-              <button className="px-4 py-1.5 rounded-lg text-xs font-bold text-primary bg-primary/10 border border-primary/20 shadow-sm transition-all">Coding Problems</button>
-            </div>
+        {/* Main Title Header */}
+        <div className="shrink-0 flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-border-subtle">
+          <div>
+            <h2 className="text-2xl font-bold text-on-surface tracking-tight">Coding Problems</h2>
+            <p className="text-xs text-on-surface-variant">Master data structures and algorithms with curated roadmaps.</p>
           </div>
+        </div>
 
-          {/* 3. The Grid Layout - takes up the remaining height and passes it down */}
-          <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0">
+        {/* Mobile-only compact stats strip */}
+        <div className="lg:hidden shrink-0 bg-surface-container border border-border-subtle rounded-xl p-3 flex items-center justify-between gap-3">
+          {statsLoading ? (
+            <div className="h-3 bg-surface-container-high rounded w-24 animate-pulse" />
+          ) : (
+            <>
+              <div className="text-sm font-bold text-on-surface">
+                {stats?.total_solved ?? 0}<span className="text-xs font-normal text-on-surface-variant">/{stats?.total_target ?? 500} solved</span>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-xs text-emerald-400 font-bold">{stats?.easy_solved ?? 0} Easy</span>
+                <span className="text-xs text-amber-400 font-bold">{stats?.medium_solved ?? 0} Med</span>
+                <span className="text-xs text-rose-400 font-bold">{stats?.hard_solved ?? 0} Hard</span>
+                <span className="text-xs text-on-surface-variant">🔥 {stats?.streak ?? 0} days</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Grid Layout */}
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 min-h-0">
             
             {/* Problems Stream View Column */}
             <div className="lg:col-span-8 flex flex-col h-full space-y-4 min-h-0">
               
-              {/* Dynamic Filter Row (Fixed at the top of the column) */}
-              <div className="shrink-0 bg-surface-container border border-border-subtle rounded-xl p-3 flex flex-wrap items-center gap-3">
+              {/* Dynamic Filter Row */}
+              <div className="shrink-0 bg-surface-container border border-border-subtle rounded-xl p-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <select
                   value={company}
                   onChange={e => updateParam('company', e.target.value)}
-                  className="flex-1 min-w-[140px] bg-surface-container-low border border-border-subtle rounded-lg px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 transition-all"
+                  className="w-full bg-surface-container-low border border-border-subtle rounded-lg px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 transition-all"
                 >
                   <option value="">All Companies</option>
                   {filterData.companies.map(c => <option key={c} value={c}>{c}</option>)}
@@ -222,7 +238,7 @@ export default function DSAEngine() {
                 <select
                   value={topic}
                   onChange={e => updateParam('topic', e.target.value)}
-                  className="flex-1 min-w-[140px] bg-surface-container-low border border-border-subtle rounded-lg px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 transition-all"
+                  className="w-full bg-surface-container-low border border-border-subtle rounded-lg px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 transition-all"
                 >
                   <option value="">All Topics</option>
                   {filterData.topics.map(t => <option key={t} value={t}>{t}</option>)}
@@ -231,7 +247,7 @@ export default function DSAEngine() {
                 <select
                   value={difficulty}
                   onChange={e => updateParam('difficulty', e.target.value)}
-                  className="flex-1 min-w-[140px] bg-surface-container-low border border-border-subtle rounded-lg px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 transition-all"
+                  className="w-full bg-surface-container-low border border-border-subtle rounded-lg px-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50 transition-all"
                 >
                   <option value="">All Difficulties</option>
                   <option value="EASY">Easy</option>
@@ -240,8 +256,8 @@ export default function DSAEngine() {
                 </select>
               </div>
 
-              {/* 4. Problem Content Stack - THIS is the ONLY part that will scroll now */}
-              <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-2 pb-4">
+              {/* Problem list — only this scrolls */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-1 pb-4">
                 {error && (
                   <div className="text-center py-8 text-rose-400 bg-rose-500/5 rounded-xl border border-rose-500/10 text-sm">
                     {error}
@@ -285,8 +301,8 @@ export default function DSAEngine() {
               </div>
             </div>
 
-            {/* Metrics Analytics Sidebar (Also handles overflow independently if it ever gets too long) */}
-            <aside className="lg:col-span-4 flex flex-col h-full overflow-y-auto custom-scrollbar space-y-4 pr-2">
+            {/* Stats sidebar — desktop only (mobile has compact strip above) */}
+            <aside className="hidden lg:flex lg:col-span-4 flex-col h-full overflow-y-auto custom-scrollbar space-y-4 pr-2">
               <section className="bg-surface-container border border-border-subtle rounded-xl p-5 shadow-sm">
                 {statsLoading ? (
                   <div className="animate-pulse space-y-3">
@@ -345,26 +361,29 @@ export default function DSAEngine() {
                 )}
               </section>
 
-              {/* AI Synergy Box */}
+              {/* AI Teacher Box */}
               <section className="bg-surface-container border border-border-subtle rounded-xl overflow-hidden shadow-sm">
                 <div className="bg-primary/5 p-4 flex items-center gap-3 border-b border-border-subtle">
-                  <span className="material-symbols-outlined text-primary text-xl">auto_awesome</span>
-                  <h4 className="font-semibold text-sm text-on-surface">AI Copilot Sync</h4>
+                  <span className="material-symbols-outlined text-primary text-xl">school</span>
+                  <h4 className="font-semibold text-sm text-on-surface">AI Teacher</h4>
                 </div>
                 <div className="p-4 space-y-3">
-                  <p className="text-xs text-on-surface-variant/90 leading-relaxed italic border-l-2 border-primary/30 pl-3">
-                    "Isolate base cases first inside recursion matrices, then track memoization space overhead profiles."
+                  <p className="text-xs text-on-surface-variant/90 leading-relaxed">
+                    Click any topic tag on a problem card to open an AI teaching session on that concept.
                   </p>
-                  <button onClick={() => navigate('/mentor')} className="w-full py-2 bg-primary text-white text-xs font-bold rounded-lg hover:brightness-110 transition-all shadow-sm">
-                    Generate Matrix Blueprint
-                  </button>
+                  <Link
+                    to="/mentor"
+                    className="w-full flex items-center justify-center gap-2 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:brightness-110 transition-all shadow-sm"
+                  >
+                    <span className="material-symbols-outlined text-sm">auto_awesome</span>
+                    Open AI Mentor
+                  </Link>
                 </div>
               </section>
             </aside>
             
           </div>
         </main>
-      </div>
     </div>
   );
 }

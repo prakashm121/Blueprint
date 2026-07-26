@@ -50,9 +50,11 @@ def get_vault_items(
     set_cache(cache_key, response_data, 300) # 5 mins TTL
     return response_data
 
+from app.models.vault import VaultItem, VaultItemType, VaultReferenceType
+
 class VaultItemCreate(BaseModel):
-    item_type: str
-    reference_type: str = "NONE"
+    item_type: VaultItemType
+    reference_type: VaultReferenceType = VaultReferenceType.NONE
     reference_id: Optional[int] = None
     title: str
     content: Optional[str] = None

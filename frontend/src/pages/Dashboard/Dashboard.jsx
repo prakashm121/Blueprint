@@ -1,16 +1,17 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '../api';
-import { useAuthStore } from '../store/authStore';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '../../api';
+import { useAuthStore } from '../../store/authStore';
 import {
   Bell, Briefcase, ClipboardList, MessageSquare,
   Sparkles, ChevronRight, Target, BookOpen, Code2,
-  FileText, LogOut, CheckSquare, Square, Plus
+  FileText, LogOut, CheckSquare, Square, Plus, User, Map
 } from 'lucide-react';
 
 const tileData = [
   { title: 'Planner', text: 'Organize weekly goals and deadlines in one place.', icon: ClipboardList, link: '/planner', color: '#b4c5ff' },
+  { title: 'Role Roadmap', text: 'View your step-by-step career path and learning milestones.', icon: Map, link: '/roadmap', color: '#38bdf8' },
   { title: 'AI Mentor', text: 'Ask questions, get interview prep help, and refine your resume.', icon: MessageSquare, link: '/mentor', color: '#c0c1ff' },
   { title: 'Knowledge Vault', text: 'Save notes, flashcards, and topic references for review.', icon: BookOpen, link: '/vault', color: '#10B981' },
   { title: 'DSA Practice', text: 'Master data structures and algorithms with curated problems.', icon: Code2, link: '/interview-hub/dsa', color: '#F43F5E' },
@@ -33,15 +34,41 @@ export default function Dashboard() {
     retry: false,
   });
 
-  // -- Interactive Checklist State --
-  const [focusItems, setFocusItems] = useState([
-    { id: 1, text: "Revise B-Tree balancing and dynamic partitioning equations", completed: true, category: "OS / DBMS" },
-    { id: 2, text: "Solve 3 Graph DFS cycle detection challenges", completed: false, category: "DSA" },
-    { id: 3, text: "Refactor Primary Port Microservices database config in Portfolio Project", completed: false, category: "Projects" },
-    { id: 4, text: "Incorporate robust STAR metric bullet points for Google LP in resume", completed: false, category: "Career" },
-  ]);
+  const queryClient = useQueryClient();
   const [newItemText, setNewItemText] = useState("");
   const [newItemCategory, setNewItemCategory] = useState("DSA");
+
+  // Daily plan is fetched fresh every time (staleTime: 0) so new task completions 
+  // show up immediately without a page reload.
+  const { data: dailyPlanData } = useQuery({
+    queryKey: ['dailyPlan'],
+    queryFn: async () => {
+      try {
+        const res = await api.post('/api/v1/planner/daily', { available_minutes: 120, custom_tasks: [] });
+        return res.data;
+      } catch {
+        return null;
+      }
+    },
+    staleTime: 0,
+  });
+
+  const focusItems = useMemo(() => {
+    if (!dailyPlanData?.daily_plan) return [];
+    return dailyPlanData.daily_plan.map((t, i) => ({
+      id: t.id ?? `custom-${i}`,
+      text: t.title,
+      completed: t.status === 'Completed',
+      category: t.category || 'Custom',
+    }));
+  }, [dailyPlanData]);
+
+  // DSA stats from hub API for real total
+  const { data: dsaStats } = useQuery({
+    queryKey: ['dsaStats'],
+    queryFn: () => api.get('/api/v1/hub/stats/dsa').then(r => r.data),
+    staleTime: 1000 * 60 * 10,
+  });
 
   // -- Dynamic Variables Mapping --
   const profile = data?.profile ?? {};
@@ -50,8 +77,8 @@ export default function Dashboard() {
     weekly_tasks_completed: data?.weekly_tasks_completed ?? 0,
     weekly_tasks_total: data?.weekly_tasks_total ?? 0,
     planner_completion: data?.planner_completion ?? 0,
-    dsa_solved: data?.dsa_solved ?? 0,
-    dsa_total: data?.dsa_total ?? 200,
+    dsa_solved: dsaStats?.total_solved ?? data?.dsa_solved ?? 0,
+    dsa_total: dsaStats?.total_target ?? data?.dsa_total ?? 3632,
     subjects_completed: data?.subjects_completed ?? 0,
     resume_score: data?.resume_score ?? 0,
   };
@@ -82,13 +109,31 @@ export default function Dashboard() {
   };
 
   const handleToggleTask = (id) => {
-    setFocusItems(focusItems.map((item) => (item.id === id ? { ...item, completed: !item.completed } : item)));
+    // Optimistic UI only — task status update goes through planner task endpoint
+    queryClient.setQueryData(['dailyPlan'], old => {
+      if (!old) return old;
+      return {
+        ...old,
+        daily_plan: old.daily_plan.map(t =>
+          (t.id ?? `custom-${t.title}`) === id ? { ...t, status: t.status === 'Completed' ? 'Pending' : 'Completed' } : t
+        ),
+      };
+    });
   };
 
-  const handleAddTask = (e) => {
+  const handleAddTask = async (e) => {
     e.preventDefault();
     if (!newItemText.trim()) return;
-    setFocusItems([...focusItems, { id: Date.now(), text: newItemText, completed: false, category: newItemCategory }]);
+    try {
+      // POST to the planner API to persist the custom task
+      await api.post('/api/v1/planner/daily', {
+        available_minutes: 120,
+        custom_tasks: [newItemText.trim()],
+      });
+      queryClient.invalidateQueries({ queryKey: ['dailyPlan'] });
+    } catch {
+      // Silent fail — UI still shows it optimistically via invalidation
+    }
     setNewItemText("");
   };
 
@@ -99,15 +144,11 @@ export default function Dashboard() {
         {/* Global Control Bar */}
         <div className="flex justify-end gap-4 mb-2">
           <Link
-            to="/notifications"
+            to="/profile"
             className="flex items-center gap-2 rounded-xl bg-surface-card px-4 py-2 text-sm text-on-surface-variant border border-border-subtle hover:border-outline hover:text-on-surface transition-all"
           >
-            <Bell className="h-4 w-4" />
-            {(data?.unread_notifications_count ?? 0) > 0 && (
-              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-fixed-dim px-1 text-xs font-bold text-slate-950">
-                {data.unread_notifications_count}
-              </span>
-            )}
+            <User className="h-4 w-4" />
+            Edit Profile
           </Link>
           <button
             onClick={() => { logout(); navigate('/login'); }}

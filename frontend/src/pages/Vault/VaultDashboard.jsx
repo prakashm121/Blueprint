@@ -101,7 +101,7 @@ export default function VaultDashboard() {
 
   return (
     <div className="bg-background-deep text-on-surface font-body-base antialiased min-h-screen relative">
-      <div className="md:pl-64 flex flex-col min-h-screen">
+      <div className="flex flex-col min-h-screen">
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
           
           {/* Header Row */}

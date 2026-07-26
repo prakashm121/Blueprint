@@ -53,6 +53,8 @@ frontend/
     │   ├── LogoBlueprint.png
     │
     ├── components/
+    │   ├── Layout.jsx                  # Main wrapper layout with Sidebar
+    │   ├── Sidebar.jsx                 # Persistent global navigation sidebar
     │   └── ProtectedRoute.jsx          # Wraps routes that require auth
     │
     ├── data/                           # Static filter config (no API call needed)
@@ -61,17 +63,17 @@ frontend/
     │   └── quiz_filters.json           # Quiz section + topic filters
     │
     ├── pages/
-    │   ├── Landing.jsx                 # Public landing page
-    │   ├── Register.jsx                # Sign up form
-    │   ├── Login.jsx                   # Sign in form
-    │   ├── CheckEmail.jsx              # Post-register "check your email" screen
-    │   ├── VerifyEmail.jsx             # Consumes ?token= from email link
-    │   ├── Onboarding.jsx              # Target role, companies, skill assessment
-    │   ├── Dashboard.jsx               # Readiness score + summary cards
-    │   ├── Planner.jsx                 # Weekly plan + task management
-    │   ├── Mentor.jsx                  # AI mentor chat (Gemini)
-    │   ├── Notifications.jsx           # In-app notification feed
-    │   ├── NotFound.jsx                # 404 page
+    │   ├── Auth/                       # Login.jsx, Register.jsx, CheckEmail.jsx, VerifyEmail.jsx
+    │   ├── Landing/                    # Landing.jsx (Public landing page)
+    │   ├── Dashboard/                  # Dashboard.jsx (Readiness score + summary cards)
+    │   ├── Planner/                    # Planner.jsx (Weekly plan + task management)
+    │   ├── Mentor/                     # Mentor.jsx (AI mentor chat)
+    │   ├── Onboarding/                 # Onboarding.jsx (Target role, companies, skills)
+    │   ├── Notifications/              # Notifications.jsx (In-app notification feed)
+    │   ├── Profile/                    # Profile.jsx
+    │   ├── Roadmap/                    # Roadmap.jsx
+    │   ├── ResumeAnalyser/             # ResumeAnalyser.jsx (Placeholder)
+    │   ├── Misc/                       # NotFound.jsx (404 page)
     │   │
     │   ├── InterviewHub/
     │   │   ├── DSAEngine.jsx           # DSA problem list — filters, keyset pagination

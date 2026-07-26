@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { api } from '../api';
+import Layout from './Layout';
 
 export default function ProtectedRoute() {
   const token = useAuthStore((state) => state.token);
@@ -35,5 +36,5 @@ export default function ProtectedRoute() {
     return <Navigate to="/dashboard" replace />;
   }
 
-  return <Outlet />;
+  return <Layout />;
 }

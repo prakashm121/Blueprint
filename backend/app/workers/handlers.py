@@ -1,4 +1,7 @@
-import json
+"""
+handlers.py — Outbox event handlers.
+Each function processes one event type dispatched by the outbox worker.
+"""
 import logging
 from datetime import datetime, timezone
 
@@ -21,10 +24,6 @@ from app.services.notification_service import (
 from app.workers import event_types as ET
 
 logger = logging.getLogger("placementos.handlers")
-
-
-def _user_name(user: User) -> str | None:
-    return user.profile.full_name if user.profile else user.full_name
 
 
 def handle_email_verification(payload: dict) -> None:

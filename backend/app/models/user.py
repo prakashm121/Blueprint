@@ -1,4 +1,8 @@
-from sqlalchemy import Boolean, Column, Integer, String, DateTime, Text
+"""
+user.py — Core user account model.
+target_companies is stored as a JSON-encoded list of strings.
+"""
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, Text, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -18,5 +22,9 @@ class User(Base):
     onboarding_completed_at = Column(DateTime(timezone=True), nullable=True)
     email_verified = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_user_target_role", "target_role"),
+    )
 
     profile = relationship("Profile", back_populates="user", uselist=False)

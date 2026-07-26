@@ -9,7 +9,7 @@ from app.workers.celery_app import celery_app
 from app.db.session import SessionLocal
 from app.workers.outbox import process_outbox_events
 from app.workers.scheduler_jobs import scan_due_planner_tasks, reconcile_stuck_generations
-from app.services.roadmap_service import generate_roadmap
+from app.services.initial_plan_service import generate_initial_plan
 
 logger = logging.getLogger("placementos.celery")
 
@@ -35,8 +35,8 @@ def reconcile_generations_task():
 def generate_roadmap_task(generation_id: int):
     db = SessionLocal()
     try:
-        generate_roadmap(db, generation_id)
+        generate_initial_plan(db, generation_id)
     except Exception:
-        logger.exception("generate_roadmap failed generation_id=%s", generation_id)
+        logger.exception("generate_initial_plan failed generation_id=%s", generation_id)
     finally:
         db.close()

@@ -165,19 +165,14 @@ export default function QuizEngine() {
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="bg-background-deep text-on-surface font-body-base antialiased min-h-screen">
-      <div className="md:pl-64 flex flex-col min-h-screen">
+      <div className="flex flex-col min-h-screen">
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
 
           {/* ── SubHeader ── */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-border-subtle">
             <div>
-              <h2 className="text-2xl font-bold text-on-surface tracking-tight">Interview Hub</h2>
+              <h2 className="text-2xl font-bold text-on-surface tracking-tight">Quiz Engine</h2>
               <p className="text-xs text-on-surface-variant">Calibrate operational competency profiles dynamically.</p>
-            </div>
-            <div className="flex bg-surface-container-low p-1 rounded-xl border border-border-subtle self-start lg:self-center gap-1">
-              <button className="px-4 py-1.5 rounded-lg text-xs font-bold text-primary bg-primary/10 border border-primary/20 shadow-sm transition-all">Quiz</button>
-              <button onClick={() => navigate('/interview-hub/qa')}  className="px-4 py-1.5 rounded-lg text-xs font-medium text-on-surface-variant hover:text-on-surface transition-all">Interview Q&A</button>
-              <button onClick={() => navigate('/interview-hub/dsa')} className="px-4 py-1.5 rounded-lg text-xs font-medium text-on-surface-variant hover:text-on-surface transition-all">Coding Problems</button>
             </div>
           </div>
 

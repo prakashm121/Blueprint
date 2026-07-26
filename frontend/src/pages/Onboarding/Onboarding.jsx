@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../api';
+import { api } from '../../api';
 import { ChevronRight, Sparkles, Target, GraduationCap, Check } from 'lucide-react';
 
 const STEPS = ['profile', 'assessment', 'goals', 'roadmap'];
@@ -57,29 +57,35 @@ export default function Onboarding() {
   const [goals, setGoals] = useState({ target_role: '', target_companies: [] });
   const [generating, setGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState(null);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/api/v1/onboarding/status').then((res) => {
-      const s = res.data.onboarding_step;
+    Promise.all([
+      api.get('/api/v1/onboarding/status').catch(() => ({ data: {} })),
+      api.get('/api/v1/onboarding/catalog').catch(() => ({ data: null }))
+    ]).then(([statusRes, catalogRes]) => {
+      const s = statusRes.data?.onboarding_step;
       if (s === 'completed') {
         navigate('/dashboard', { replace: true });
         return;
       }
       if (s && STEPS.includes(s)) setStep(s);
       else if (s === 'generate_roadmap') setStep('roadmap');
-    }).catch(() => {});
 
-    api.get('/api/v1/onboarding/catalog').then((res) => {
-      setCatalog(res.data);
-      const initial = {};
-      [...res.data.subjects, ...res.data.dsa_topics].forEach((item) => {
-        initial[item.key] = 50;
-      });
-      setConfidence(initial);
-      if (!goals.target_role && res.data.target_roles?.length) {
-        setGoals((g) => ({ ...g, target_role: res.data.target_roles[0] }));
+      const catData = catalogRes.data;
+      if (catData) {
+        setCatalog(catData);
+        const initial = {};
+        [...(catData.subjects || []), ...(catData.dsa_topics || [])].forEach((item) => {
+          initial[item.key] = 50;
+        });
+        setConfidence(initial);
+        if (!goals.target_role && catData.target_roles?.length) {
+          setGoals((g) => ({ ...g, target_role: catData.target_roles[0] }));
+        }
       }
-    }).catch(() => {});
+      setInitialLoading(false);
+    });
   }, [navigate]);
 
   const saveProfile = async (e) => {
@@ -130,15 +136,28 @@ export default function Onboarding() {
       const genId = res.data.planner_generation_id;
       setGenerationStatus('queued');
 
+      let attempts = 0;
+      const MAX_ATTEMPTS = 40; // 40 * 1.5s = 60s timeout
+
       const poll = async () => {
-        const statusRes = await api.get(`/api/v1/onboarding/roadmap-status/${genId}`);
-        setGenerationStatus(statusRes.data.status);
-        if (statusRes.data.status === 'completed') {
-          navigate('/dashboard', { replace: true });
-        } else if (statusRes.data.status === 'failed') {
-          setError('Roadmap generation failed. You can still continue to your dashboard.');
+        attempts++;
+        if (attempts > MAX_ATTEMPTS) {
+          setError('Roadmap generation timed out. Please check your dashboard later.');
           setGenerating(false);
-        } else {
+          return;
+        }
+        try {
+          const statusRes = await api.get(`/api/v1/onboarding/roadmap-status/${genId}`);
+          setGenerationStatus(statusRes.data.status);
+          if (statusRes.data.status === 'completed') {
+            navigate('/dashboard', { replace: true });
+          } else if (statusRes.data.status === 'failed') {
+            setError('Roadmap generation failed. You can still continue to your dashboard.');
+            setGenerating(false);
+          } else {
+            setTimeout(poll, 1500);
+          }
+        } catch {
           setTimeout(poll, 1500);
         }
       };
@@ -157,6 +176,15 @@ export default function Onboarding() {
         : [...g.target_companies, name].slice(0, 5),
     }));
   };
+
+  if (initialLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center">
+        <div className="w-8 h-8 rounded-full border-2 border-sky-500 border-t-transparent animate-spin mb-4"></div>
+        <p className="text-sm text-slate-400 font-medium tracking-widest uppercase">Loading Onboarding...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100 sm:px-8">
@@ -177,10 +205,10 @@ export default function Onboarding() {
         {step === 'profile' && (
           <form onSubmit={saveProfile} className="grid gap-5">
             {[
-              { label: 'College name', name: 'college_name', type: 'text', required: true },
-              { label: 'Degree', name: 'degree', type: 'text' },
-              { label: 'Graduation year', name: 'graduation_year', type: 'number' },
-              { label: 'CGPA', name: 'cgpa', type: 'number', step: '0.01' },
+              { label: 'College / University', name: 'college_name', type: 'text', required: true },
+              { label: 'Degree (e.g., B.Tech)', name: 'degree', type: 'text' },
+              { label: 'Graduation Year', name: 'graduation_year', type: 'number' },
+              { label: 'Current CGPA', name: 'cgpa', type: 'number', step: '0.01' },
             ].map((field) => (
               <label key={field.name} className="block text-sm font-medium text-slate-200">
                 {field.label}
