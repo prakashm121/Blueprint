@@ -13,7 +13,7 @@ from app.api.deps import get_current_user
 from app.core.cache import delete_cache, get_cache, set_cache
 from app.db.session import get_db
 from app.models.hub import DSAProblem, InterviewQuestion, QuizQuestion
-from app.models.hub_progress import UserCodingProgress, UserQuizAttempt
+from app.models.hub_progress import UserCodingProgress, UserQuizSession
 from app.models.user import User
 
 router = APIRouter()
@@ -313,23 +313,15 @@ def submit_quiz_attempt(
     # Evaluate answers and bulk-insert attempt rows
     results       = []
     correct_count = 0
-    attempt_rows  = []
  
+    # Evaluate answers — build results list for the response (unchanged)
+    # Only persistence changes: single UserQuizSession row instead of per-answer rows
     for answer in body.answers:
         q               = question_map[answer.quiz_id]
         selected        = answer.selected_option.upper()
         correct         = q.correct_ans.upper()
         is_correct      = selected == correct
         correct_count  += int(is_correct)
- 
-        attempt_rows.append(
-            UserQuizAttempt(
-                user_id         = current_user.id,
-                quiz_id         = q.id,
-                selected_option = selected,
-                is_correct      = is_correct,
-            )
-        )
  
         results.append({
             "quiz_id":         q.id,
@@ -343,7 +335,16 @@ def submit_quiz_attempt(
             "option_d":        q.option_d,
         })
  
-    db.bulk_save_objects(attempt_rows)
+    # Persist one summary row per session (replaces per-answer UserQuizAttempt rows)
+    section = questions[0].section if questions else "General"
+    topic   = questions[0].topic   if questions else None
+    db.add(UserQuizSession(
+        user_id         = current_user.id,
+        section         = section,
+        topic           = topic,
+        total_questions = len(body.answers),
+        correct_count   = correct_count,
+    ))
     db.commit()
  
     # Invalidate the quiz stats cache so the sidebar refreshes
@@ -374,19 +375,17 @@ def get_quiz_stats(
     if cached:
         return cached
  
-    total_attempted = (
-        db.query(func.count(UserQuizAttempt.id))
-        .filter(UserQuizAttempt.user_id == current_user.id)
-        .scalar() or 0
-    )
-    total_correct = (
-        db.query(func.count(UserQuizAttempt.id))
-        .filter(
-            UserQuizAttempt.user_id    == current_user.id,
-            UserQuizAttempt.is_correct == True,          # noqa: E712
+    # Single query: SUM from UserQuizSession (one row per session)
+    row = (
+        db.query(
+            func.sum(UserQuizSession.total_questions).label("total_attempted"),
+            func.sum(UserQuizSession.correct_count).label("total_correct"),
         )
-        .scalar() or 0
+        .filter(UserQuizSession.user_id == current_user.id)
+        .one()
     )
+    total_attempted = int(row.total_attempted or 0)
+    total_correct   = int(row.total_correct   or 0)
  
     data = {
         "total_attempted": total_attempted,

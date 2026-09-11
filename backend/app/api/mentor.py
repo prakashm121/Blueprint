@@ -1,4 +1,5 @@
 import re
+import time
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -11,33 +12,14 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.mentor import MentorConversation, MentorMessage
 from app.services.context_builder import build_mentor_context, build_teacher_context
-from app.services.ai_service import generate_mentor_response_async
-
-
-router = APIRouter()
-
-# ---------------------------------------------------------------------------
-# Teaching keyword detection
-# ---------------------------------------------------------------------------
-
-TEACHING_TRIGGERS = re.compile(
-    r"\b(teach|explain|what is|what are|how does|how do|tell me about|help me understand)\b",
-    re.IGNORECASE,
+from app.services.ai_service import (
+    generate_teacher_response_async,
+    generate_mentor_response_async,
+    resolve_conversation_state_async,
 )
 
 
-def _extract_teach_topic(message: str) -> Optional[str]:
-    """Return a cleaned topic string if the message looks like a teaching request."""
-    if not TEACHING_TRIGGERS.search(message):
-        return None
-    # Strip common lead-ins and return the remainder as the topic
-    stripped = re.sub(
-        r"(?i)^(teach me (about|how to use|what is)?|explain|what is|what are|how does|how do|tell me about|help me understand)\s*:?\s*",
-        "",
-        message.strip(),
-    )
-    return stripped.strip() or None
-
+router = APIRouter()
 
 # ---------------------------------------------------------------------------
 # Rate limiting helper
@@ -191,7 +173,7 @@ async def send_message(
     if not convo:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    # Fetch last 6 messages as history
+    # Fetch last 20 messages as history
     history_msgs = (
         db.query(MentorMessage)
         .filter(MentorMessage.conversation_id == convo.id)
@@ -201,17 +183,32 @@ async def send_message(
     )
     history = [{"role": m.role, "content": m.content} for m in history_msgs]
 
-    # Detect teaching intent and build appropriate context
-    teach_topic = _extract_teach_topic(trimmed)
-    if teach_topic:
-        # Teacher mode: daily-quota rate limit (20/day)
+    # Resolve state transition
+    start_time = time.perf_counter()
+    
+    t0 = time.perf_counter()
+    state = await resolve_conversation_state_async(
+        current_mode=convo.agent_mode,
+        current_topic=convo.active_topic,
+        current_task=convo.current_task,
+        message=trimmed,
+        history=history
+    )
+    print(f"[Latency] Router: {time.perf_counter() - t0:.3f}s")
+
+    # Persist state
+    convo.agent_mode = state["mode"]
+    convo.active_topic = state["topic"]
+    convo.current_task = state["task"]
+    db.commit()
+
+    # Generate response
+    if convo.agent_mode == "teacher":
         if redis_client:
             teacher_key = f"teacher:ratelimit:{current_user.id}:{datetime.utcnow().date().isoformat()}"
             t_count = redis_client.incr(teacher_key)
             if t_count == 1:
-                # TTL until midnight
                 from datetime import date
-                import time
                 midnight = datetime.combine(
                     date.today() + timedelta(days=1), datetime.min.time()
                 )
@@ -222,36 +219,32 @@ async def send_message(
                     429, "Daily teaching limit reached. Try again tomorrow."
                 )
 
-        # Check explanation cache (shared across users, 24 hr)
-        import hashlib
-        topic_hash = hashlib.md5(teach_topic.lower().strip().encode()).hexdigest()
-        explain_key = f"teacher:explain:{topic_hash}"
-        cached_explain = get_cache(explain_key)
-
-        if cached_explain:
-            reply_text = cached_explain
-        else:
-            teacher_ctx = build_teacher_context(db, current_user, teach_topic)
-            # Build a teacher-specific prompt and call Gemini
-            teach_prompt = (
-                f"Teach the following topic at {teacher_ctx['student_proficiency']} level for a student "
-                f"targeting {teacher_ctx['target_role']}:\n\nTopic: {teach_topic}\n\n"
-                f"Structure:\n1. Core concept (2-3 sentences)\n2. How it works (with code example if applicable)\n"
-                f"3. Common interview angle using these questions: {teacher_ctx['example_interview_questions']}\n"
-                f"4. What to practice next\n"
-            )
-            if teacher_ctx["related_dsa_problems"]:
-                teach_prompt += f"\nRelated problems: {teacher_ctx['related_dsa_problems']}\n"
-            teach_prompt += "\nKeep it under 400 words. Be direct and practical."
-            reply_text = await generate_mentor_response_async({}, teach_prompt, history)
-            set_cache(explain_key, reply_text, 86400)  # 24 hr
+        t1 = time.perf_counter()
+        teacher_ctx = build_teacher_context(db, current_user, convo.active_topic)
+        print(f"[Latency] DB/Context (Teacher): {time.perf_counter() - t1:.3f}s")
+        
+        t2 = time.perf_counter()
+        reply_text = await generate_teacher_response_async(
+            context=teacher_ctx,
+            topic=convo.active_topic or "General",
+            message=trimmed,
+            history=history,
+        )
+        print(f"[Latency] AI Generation (Teacher): {time.perf_counter() - t2:.3f}s")
     else:
-        # Standard mentor mode: use cached context
-        context = build_mentor_context(db, current_user)
-        # Inject tone instruction into the message for _call_gemini
-        tone_instruction = context.get("accountability", {}).get("tone_instruction", "")
-        augmented_message = f"[Tone: {tone_instruction}]\n\n{trimmed}" if tone_instruction else trimmed
-        reply_text = await generate_mentor_response_async(context, augmented_message, history)
+        t1 = time.perf_counter()
+        mentor_ctx = build_mentor_context(db, current_user)
+        print(f"[Latency] DB/Context (Mentor): {time.perf_counter() - t1:.3f}s")
+        
+        t2 = time.perf_counter()
+        reply_text = await generate_mentor_response_async(
+            context=mentor_ctx,
+            message=trimmed,
+            history=history,
+        )
+        print(f"[Latency] AI Generation (Mentor): {time.perf_counter() - t2:.3f}s")
+        
+    print(f"[Latency] Total Request Time: {time.perf_counter() - start_time:.3f}s")
 
     # Save both messages
     user_msg = MentorMessage(

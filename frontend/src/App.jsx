@@ -18,6 +18,7 @@ import QuizEngine from './pages/InterviewHub/QuizEngine';
 import VaultDashboard from './pages/Vault/VaultDashboard';
 import Profile from './pages/Profile/Profile';
 import ResumeAnalyser from './pages/ResumeAnalyser/ResumeAnalyser';
+import Subjects from './pages/Subjects/Subjects';
 
 function App() {
   return (
@@ -42,6 +43,7 @@ function App() {
           <Route path="/vault" element={<VaultDashboard />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/resume-analyser" element={<ResumeAnalyser />} />
+          <Route path="/subjects" element={<Subjects />} />
         </Route>
 
         <Route path="*" element={<NotFound />} />

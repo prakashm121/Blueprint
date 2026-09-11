@@ -50,9 +50,8 @@ backend/
 │   └── versions/
 │       ├── 16a3e612d75c_create_users_table.py
 │       ├── efae8c76bf9c_create_profiles_table.py
-│       ├── e28044ec865c_add_dashboard_statistics_weekly_plans_.py
-│       ├── 9d8da3055bed_add_interviewhub_and_knowledge_vault_.py
-│       └── ed54bccf091a_add_updated_hub_models.py
+│       ├── d092f448052f_add_stateful_conversation_fields.py
+│       └── ... (10 migrations total)
 │
 ├── app/
 │   ├── api/
@@ -63,7 +62,7 @@ backend/
 │   │   ├── dashboard.py            # GET /dashboard/summary
 │   │   ├── planner.py              # weekly plans + tasks
 │   │   ├── hub.py                  # DSA problems, Interview Q&A, Quiz MCQ
-│   │   ├── mentor.py               # AI mentor conversations (Gemini)
+│   │   ├── mentor.py               # AI mentor/teacher stateful router
 │   │   ├── notifications.py        # in-app notification feed
 │   │   └── vault.py                # knowledge vault items
 │   │
@@ -74,16 +73,20 @@ backend/
 │   │   ├── outbox_event.py         # TransactionalOutbox
 │   │   ├── notification.py         # Notification
 │   │   ├── planner.py              # WeeklyPlan + PlannerTask
-│   │   ├── planner_generation.py   # PlannerGeneration (async job tracking)
+│   │   ├── roadmap.py              # RoleRoadmap + RoadmapMilestone
 │   │   ├── assessment.py           # UserSkillAssessment
 │   │   ├── dashboard_stats.py      # DashboardStatistics (denormalised cache row)
-│   │   ├── mentor.py               # MentorConversation + MentorMessage
+│   │   ├── mentor.py               # MentorConversation (agent_mode, topic) + MentorMessage
 │   │   ├── hub.py                  # DSAProblem · InterviewQuestion · QuizQuestion
 │   │   ├── hub_progress.py         # UserCodingProgress · UserQuizAttempt · UserQuestionProgress
 │   │   └── vault.py                # VaultItem
 │   │
+│   ├── prompts/                    # LLM Prompts
+│   │   ├── mentor.py               # System prompt for Career Mentor
+│   │   └── teacher.py              # System prompt for Technical Teacher
+│   │
 │   ├── services/
-│   │   ├── ai_service.py           # Gemini API wrapper (mentor + roadmap)
+│   │   ├── ai_service.py           # Gemini API wrappers & Stateful Router
 │   │   ├── context_builder.py      # builds user context payload for AI calls
 │   │   ├── email_service.py        # SMTP send helpers (verify, welcome, reminders)
 │   │   ├── notification_service.py # create + dispatch in-app notifications
@@ -228,7 +231,8 @@ alembic upgrade head
 | `Notification` | `notifications` | In-app notification feed per user |
 | `WeeklyPlan` | `weekly_plans` | AI or manual weekly prep plan |
 | `PlannerTask` | `planner_tasks` | Individual tasks inside a weekly plan |
-| `PlannerGeneration` | `planner_generations` | Async job tracking for AI plan generation |
+| `RoleRoadmap` | `role_roadmaps` | Custom role-specific roadmap for a user |
+| `RoadmapMilestone` | `roadmap_milestones` | Ordered tasks inside a role roadmap |
 | `UserSkillAssessment` | `user_skill_assessments` | Self-rated confidence per skill (onboarding) |
 | `DashboardStatistics` | `dashboard_statistics` | Denormalised readiness score row per user |
 | `MentorConversation` | `mentor_conversations` | AI chat session header |
@@ -373,12 +377,17 @@ All routes are prefixed `/api/v1/`.
 
 ### AI Mentor (Gemini)
 
+The AI Mentor uses a **Stateful Routing Architecture** (`app/services/ai_service.py`):
+- Conversations maintain a persistent `agent_mode` (Teacher or Mentor), `active_topic`, and `current_task`.
+- A deterministic router fast-paths follow-up messages (0 LLM calls for routing) using fast heuristic scoring to reduce latency.
+- Ambiguous initial messages fall back to an LLM router to classify the intent.
+
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/mentor/conversations` | List user's conversations |
 | `POST` | `/mentor/conversations` | Start new conversation |
 | `GET` | `/mentor/conversations/{id}` | Get conversation with all messages |
-| `POST` | `/mentor/conversations/{id}/message` | Send message, get Gemini response |
+| `POST` | `/mentor/conversations/{id}/message` | Send message, resolve state, get Gemini response |
 
 ### Knowledge Vault
 

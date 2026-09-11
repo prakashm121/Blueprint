@@ -33,17 +33,13 @@ celery_app.conf.update(
 )
 
 celery_app.conf.beat_schedule = {
-    "process-outbox-every-few-seconds": {
+    "process-outbox-every-10-seconds": {
         "task": "app.workers.celery_tasks.process_outbox_task",
-        "schedule": 30.0,
+        "schedule": 10.0,
     },
     "scan-planner-reminders-hourly": {
         "task": "app.workers.celery_tasks.scan_planner_reminders_task",
         "schedule": crontab(minute=0),
-    },
-    "reconcile-stuck-generations-5m": {
-        "task": "app.workers.celery_tasks.reconcile_generations_task",
-        "schedule": crontab(minute="*/5"),
     },
 }
 

@@ -462,7 +462,16 @@
             "Proto.io"
         ],
         "Behavioral": [
-            "HR"
+            "Communication",
+            "Leadership",
+            "Teamwork",
+            "Conflict Resolution",
+            "Problem Solving",
+            "Situational Judgment",
+            "Interview Communication",
+            "Negotiation",
+            "Talent Acquisition",
+            "Performance Management"
         ]
     }
 }

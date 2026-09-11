@@ -51,7 +51,7 @@ Blueprint is built on five principles:
 | Interview Hub — DSA Engine | 3,632 problems, keyset-paginated, filterable by difficulty/topic/company, per-user solve tracking | Live |
 | Interview Hub — Q&A Engine | 33,807 open-ended questions, filterable by category/skill/role/difficulty | Live |
 | Interview Hub — Quiz Engine | 5,816 MCQs, filterable by section/topic/difficulty, per-user attempt history | Live |
-| AI Mentor | Context-aware chat (Gemini) grounded in the user's actual progress | Live |
+| AI Mentor | Context-aware stateful chat (Teacher/Mentor modes) with deterministic routing | Live |
 | Knowledge Vault | Bookmarks, AI insights, and personal notes in one polymorphic store | Live |
 | Notifications | In-app feed + email, driven by a transactional outbox and scheduled reminder jobs | Live |
 | Resume Analysis | ATS scoring pipeline — outbox event (`ET.RESUME_ANALYSIS`) already wired; scoring logic in progress | In progress |
@@ -135,13 +135,14 @@ Blueprint/
 └── backend/                        # FastAPI service
     ├── main.py                     # app entry point
     ├── seed_hub.py                 # seeds DSA + Interview + Quiz tables
-    ├── alembic/versions/           # 5 migrations: users → profiles → dashboard/planner → hub → hub v2
+    ├── alembic/versions/           # 10 migrations
     ├── app/
     │   ├── api/                    # auth, onboarding, profile, dashboard, planner,
     │   │                           #   hub, mentor, notifications, vault
-    │   ├── models/                 # User, Profile, WeeklyPlan/PlannerTask, DSAProblem,
-    │   │                           #   InterviewQuestion, QuizQuestion, VaultItem, …
-    │   ├── services/                # ai_service, context_builder, email_service,
+    │   ├── models/                 # User, Profile, RoleRoadmap, WeeklyPlan, DSAProblem,
+    │   │                           #   MentorConversation, InterviewQuestion, QuizQuestion, VaultItem, …
+    │   ├── prompts/                # mentor.py, teacher.py (LLM System prompts)
+    │   ├── services/               # ai_service (stateful router), context_builder, email_service,
     │   │                           #   notification_service, roadmap_service
     │   ├── workers/                # celery_app, celery_tasks, outbox, scheduler_jobs,
     │   │                           #   dispatch, event_types, handlers

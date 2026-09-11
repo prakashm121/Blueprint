@@ -11,7 +11,14 @@ from app.models.user import User
 from app.models.dashboard_stats import DashboardStatistics
 from app.models.assessment import UserSkillAssessment
 from app.models.planner import WeeklyPlan, PlannerTask
+from app.models.roadmap import RoleRoadmap, RoadmapMilestone
 from app.core.cache import get_cache, set_cache
+from app.core.role_skills import (
+    ROLE_ASSESSMENT_SKILLS,
+    get_key_to_label,
+    get_category_for_key,
+    get_skills_in_category,
+)
 
 
 def _decode_companies(user: User) -> list[str]:
@@ -40,13 +47,19 @@ def build_weekly_plan_context(db: Session, user: User) -> dict:
         .first()
     )
 
+    role = user.target_role or "Software Engineer"
+    key_to_label = get_key_to_label(role)
+
     assessments = (
         db.query(UserSkillAssessment)
-        .filter(UserSkillAssessment.user_id == user.id)
+        .filter(
+            UserSkillAssessment.user_id == user.id,
+            UserSkillAssessment.role == role,
+        )
         .all()
     )
     weak_areas = [
-        a.skill_key.replace("_", " ").title()
+        key_to_label.get(a.skill_key, a.skill_key.replace("_", " ").title())
         for a in assessments if a.self_rated_confidence < 50
     ]
 
@@ -63,14 +76,40 @@ def build_weekly_plan_context(db: Session, user: User) -> dict:
         .all()
     )
 
+    roadmap = (
+        db.query(RoleRoadmap)
+        .filter(RoleRoadmap.user_id == user.id)
+        .first()
+    )
+    pending_milestones = []
+    if roadmap:
+        pending_milestones = (
+            db.query(RoadmapMilestone)
+            .filter(
+                RoadmapMilestone.roadmap_id == roadmap.id,
+                RoadmapMilestone.status     == "pending",
+            )
+            .order_by(RoadmapMilestone.priority_order.asc())
+            .limit(5)
+            .all()
+        )
+
+    grad_year = getattr(profile, "graduation_year", None)
+    months_to_graduation = None
+    if grad_year and str(grad_year).isdigit():
+        target_date = date(int(grad_year), 6, 1) # Assume June graduation
+        months_to_graduation = max(0, (target_date.year - date.today().year) * 12 + target_date.month - date.today().month)
+
     return {
         "profile": {
             "full_name": profile.full_name if profile else user.full_name,
             "college": getattr(profile, "college_name", None) or "Unknown",
             "specialization": getattr(profile, "specialization", None) or "Unknown",
-            "graduation_year": getattr(profile, "graduation_year", None) or "Unknown",
+            "graduation_year": grad_year or "Unknown",
             "target_role": user.target_role or "Software Engineer",
             "target_companies": _decode_companies(user),
+            "months_to_graduation": months_to_graduation,
+            "preparation_status": getattr(user, "preparation_status", "early"),
         },
         "progress": {
             "readiness_score": float(stats.readiness_score or 0) if stats else 0,
@@ -79,6 +118,10 @@ def build_weekly_plan_context(db: Session, user: User) -> dict:
         },
         "weak_areas": weak_areas,
         "completed_task_titles": [t.title for t in completed_tasks],
+        "next_roadmap_milestones": [
+            {"title": m.title, "category": m.category}
+            for m in pending_milestones
+        ],
     }
 
 
@@ -211,14 +254,43 @@ def build_mentor_context(db: Session, user: User) -> dict:
         .all()
     )
 
+    role = user.target_role or "Software Engineer"
+    key_to_label = get_key_to_label(role)
+
     weak = (
         db.query(UserSkillAssessment)
-        .filter(UserSkillAssessment.user_id == user.id)
+        .filter(
+            UserSkillAssessment.user_id == user.id,
+            UserSkillAssessment.role == role,
+        )
         .order_by(UserSkillAssessment.self_rated_confidence.asc())
-        .limit(3)
+        .limit(5)
         .all()
     )
-    weak_areas = [a.skill_key.replace("_", " ").title() for a in weak]
+    weak_areas = [key_to_label.get(a.skill_key, a.skill_key.replace("_", " ").title()) for a in weak]
+
+    # Build full skill profile grouped by category for rich AI context
+    all_assessments = (
+        db.query(UserSkillAssessment)
+        .filter(
+            UserSkillAssessment.user_id == user.id,
+            UserSkillAssessment.role == role,
+        )
+        .all()
+    )
+    confidence_map = {row.skill_key: int(row.self_rated_confidence) for row in all_assessments}
+
+    skill_profile: dict[str, dict[str, int]] = {}
+    for category_name, skills in ROLE_ASSESSMENT_SKILLS.get(role, {}).items():
+        skill_profile[category_name] = {
+            s["label"]: confidence_map.get(s["key"], 25)
+            for s in skills
+        }
+
+    strong_areas = [
+        key_to_label.get(a.skill_key, a.skill_key.replace("_", " ").title())
+        for a in all_assessments if a.self_rated_confidence >= 75
+    ]
 
     from app.models.hub_progress import UserCodingProgress
     solve_dates_rows = (
@@ -256,25 +328,50 @@ def build_mentor_context(db: Session, user: User) -> dict:
         except json.JSONDecodeError:
             pass
 
+    # Roadmap context — what is the student actively working toward?
+    roadmap = (
+        db.query(RoleRoadmap)
+        .filter(RoleRoadmap.user_id == user.id)
+        .first()
+    )
+    roadmap_ctx = {"role": None, "next_milestone": None, "completed": 0, "total": 0}
+    if roadmap:
+        milestones = roadmap.milestones
+        total = len(milestones)
+        completed = sum(1 for m in milestones if m.status == "completed")
+        first_pending = next(
+            (m for m in sorted(milestones, key=lambda x: x.priority_order) if m.status == "pending"),
+            None,
+        )
+        roadmap_ctx = {
+            "role":           roadmap.role,
+            "next_milestone": {"title": first_pending.title, "category": first_pending.category} if first_pending else None,
+            "completed":      completed,
+            "total":          total,
+        }
+
     ctx = {
         "profile": {
-            "full_name": profile.full_name if profile else user.full_name,
-            "target_role": user.target_role or "Software Engineer",
+            "full_name":        profile.full_name if profile else user.full_name,
+            "target_role":      role,
             "target_companies": target_companies,
         },
         "progress": {
-            "readiness_score": float(stats.readiness_score or 0) if stats else 0,
-            "dsa_solved": int(stats.dsa_solved or 0) if stats else 0,
+            "readiness_score":    float(stats.readiness_score or 0) if stats else 0,
+            "dsa_solved":         int(stats.dsa_solved or 0) if stats else 0,
             "planner_completion": plan_completion,
-            "active_plan_title": active_plan.title if active_plan else None,
-            "streak_days": streak,
+            "active_plan_title":  active_plan.title if active_plan else None,
+            "streak_days":        streak,
         },
         "accountability": {
-            "overdue_tasks": [r[0] for r in overdue_tasks],
-            "weak_areas": weak_areas,
-            "tone": tone,
+            "overdue_tasks":    [r[0] for r in overdue_tasks],
+            "weak_areas":       weak_areas,
+            "strong_areas":     strong_areas,
+            "skill_profile":    skill_profile,
+            "tone":             tone,
             "tone_instruction": TONE_INSTRUCTIONS.get(tone, ""),
         },
+        "roadmap": roadmap_ctx,
     }
     set_cache(cache_key, ctx, 300)
     return ctx
@@ -284,10 +381,11 @@ def build_mentor_context(db: Session, user: User) -> dict:
 # Teacher context
 # ---------------------------------------------------------------------------
 
-def build_teacher_context(db: Session, user: User, topic: str) -> dict:
+def build_teacher_context(db: Session, user: User, topic: str | None) -> dict:
     """Fetches context for a teaching session. Interview questions cached 12 hr shared."""
     from app.models.hub import InterviewQuestion, DSAProblem
 
+    topic = topic or "General"
     topic_hash = hashlib.md5(topic.lower().strip().encode()).hexdigest()
 
     q_cache_key = f"teacher:questions:{topic_hash}"
@@ -309,19 +407,67 @@ def build_teacher_context(db: Session, user: User, topic: str) -> dict:
         ]
         set_cache(q_cache_key, interview_qs, 43200)  # 12 hr
 
-    assessment = (
-        db.query(UserSkillAssessment)
-        .filter(
-            UserSkillAssessment.user_id == user.id,
-            UserSkillAssessment.skill_key.ilike(f"%{topic.lower().replace(' ', '_')}%"),
+    role = user.target_role or "Software Engineer"
+
+    # Find exact skill key and category from taxonomy (more reliable than ilike fuzzy match)
+    topic_lower = topic.lower().strip()
+    matched_key: str | None = None
+    matched_category: str | None = None
+    for category_name, skills in ROLE_ASSESSMENT_SKILLS.get(role, {}).items():
+        for s in skills:
+            if s["label"].lower() == topic_lower or s["key"] == topic_lower.replace(" ", "_"):
+                matched_key = s["key"]
+                matched_category = category_name
+                break
+        if matched_key:
+            break
+
+    # Get the student's confidence for this exact skill
+    if matched_key:
+        assessment = (
+            db.query(UserSkillAssessment)
+            .filter(
+                UserSkillAssessment.user_id == user.id,
+                UserSkillAssessment.role == role,
+                UserSkillAssessment.skill_key == matched_key,
+            )
+            .first()
         )
-        .first()
-    )
+    else:
+        # Fallback: fuzzy match
+        assessment = (
+            db.query(UserSkillAssessment)
+            .filter(
+                UserSkillAssessment.user_id == user.id,
+                UserSkillAssessment.skill_key.ilike(f"%{topic_lower.replace(' ', '_')}%"),
+            )
+            .first()
+        )
+
     if assessment:
         confidence = assessment.self_rated_confidence
         proficiency = "beginner" if confidence < 40 else "intermediate" if confidence < 70 else "advanced"
     else:
         proficiency = "beginner"
+        confidence = 25
+
+    # Related skills in the same category with their confidence
+    related_skills: dict[str, int] = {}
+    if matched_category:
+        category_skills = get_skills_in_category(role, matched_category)
+        confidence_map_rows = (
+            db.query(UserSkillAssessment)
+            .filter(
+                UserSkillAssessment.user_id == user.id,
+                UserSkillAssessment.role == role,
+                UserSkillAssessment.category == matched_category,
+            )
+            .all()
+        )
+        cat_confidence_map = {row.skill_key: int(row.self_rated_confidence) for row in confidence_map_rows}
+        for s in category_skills:
+            if s["key"] != matched_key:  # exclude the topic itself
+                related_skills[s["label"]] = cat_confidence_map.get(s["key"], 25)
 
     dsa_problems = []
     algorithmic_keywords = {
@@ -329,7 +475,7 @@ def build_teacher_context(db: Session, user: User, topic: str) -> dict:
         "sorting", "searching", "recursion", "backtracking",
         "linked list", "stack", "queue", "heap", "hash",
     }
-    if any(kw in topic.lower() for kw in algorithmic_keywords):
+    if any(kw in topic_lower for kw in algorithmic_keywords):
         dsa_rows = (
             db.query(DSAProblem.title, DSAProblem.difficulty, DSAProblem.frontend_id)
             .filter(DSAProblem.topic_tags.contains([topic]))
@@ -345,7 +491,10 @@ def build_teacher_context(db: Session, user: User, topic: str) -> dict:
     return {
         "topic": topic,
         "student_proficiency": proficiency,
-        "target_role": user.target_role or "Software Engineer",
+        "student_confidence": confidence,
+        "target_role": role,
+        "skill_category": matched_category,
+        "related_skills_in_category": related_skills,
         "example_interview_questions": interview_qs,
         "related_dsa_problems": dsa_problems,
     }

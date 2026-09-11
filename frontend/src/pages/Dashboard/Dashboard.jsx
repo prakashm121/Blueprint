@@ -6,7 +6,8 @@ import { useAuthStore } from '../../store/authStore';
 import {
   Bell, Briefcase, ClipboardList, MessageSquare,
   Sparkles, ChevronRight, Target, BookOpen, Code2,
-  FileText, LogOut, CheckSquare, Square, Plus, User, Map
+  FileText, LogOut, CheckSquare, Square, Plus, User, Map,
+  Brain, BarChart2
 } from 'lucide-react';
 
 const tileData = [
@@ -70,6 +71,20 @@ export default function Dashboard() {
     staleTime: 1000 * 60 * 10,
   });
 
+  // Subject confidence from assessments API (KPI Card 2)
+  const { data: subjectData } = useQuery({
+    queryKey: ['subjectBreakdown'],
+    queryFn: () => api.get('/api/v1/assessments/subjects').then(r => r.data),
+    staleTime: 1000 * 60 * 5,
+  });
+
+  // Quiz accuracy from hub stats API (KPI Card 4)
+  const { data: quizStats } = useQuery({
+    queryKey: ['quizStats'],
+    queryFn: () => api.get('/api/v1/hub/stats/quiz').then(r => r.data),
+    staleTime: 1000 * 60 * 5,
+  });
+
   // -- Dynamic Variables Mapping --
   const profile = data?.profile ?? {};
   const stats = {
@@ -79,9 +94,21 @@ export default function Dashboard() {
     planner_completion: data?.planner_completion ?? 0,
     dsa_solved: dsaStats?.total_solved ?? data?.dsa_solved ?? 0,
     dsa_total: dsaStats?.total_target ?? data?.dsa_total ?? 3632,
-    subjects_completed: data?.subjects_completed ?? 0,
-    resume_score: data?.resume_score ?? 0,
   };
+
+  // Subject confidence computed values
+  const confidentCount = subjectData?.confident_count ?? 0;
+  const subjectTotal  = subjectData?.total ?? 0;
+  // Merge all groups for chip display: subjects + dsa + role_specific
+  const subjectList = [];
+  (subjectData?.categories ?? []).forEach(cat => {
+    subjectList.push(...cat.skills);
+  });
+
+  // Quiz accuracy computed values
+  const quizAttempted = quizStats?.total_attempted ?? 0;
+  const quizCorrect   = quizStats?.total_correct ?? 0;
+  const quizAccuracy  = quizStats?.accuracy_pct ?? 0;
 
   const welcomeName = useMemo(() => {
     if (isLoading) return '…';
@@ -245,22 +272,46 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* KPI Card 2: Core Subjects */}
-            <div className="bg-surface-card border border-border-subtle rounded-2xl p-5 flex flex-col justify-between card-hover-effect">
+            {/* KPI Card 2: Subject Confidence */}
+            <div
+              className="bg-surface-card border border-border-subtle rounded-2xl p-5 flex flex-col justify-between card-hover-effect cursor-pointer"
+              onClick={() => navigate('/subjects')}
+              title="Manage subject confidence"
+            >
               <div className="flex justify-between items-start">
                 <div>
-                  <span className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">Core Subjects</span>
-                  <p className="text-2xl font-bold text-on-surface mt-1">{stats.subjects_completed}</p>
+                  <span className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">Subject Confidence</span>
+                  {subjectTotal > 0 ? (
+                    <p className="text-2xl font-bold text-on-surface mt-1">
+                      {confidentCount} <span className="text-xs text-on-surface-variant">/ {subjectTotal} confident</span>
+                    </p>
+                  ) : (
+                    <p className="text-sm text-on-surface-variant mt-2">Rate your subjects</p>
+                  )}
                 </div>
                 <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary-fixed-dim/10 text-primary-fixed-dim">
-                  <BookOpen className="h-4 w-4" />
+                  <Brain className="h-4 w-4" />
                 </div>
               </div>
-              <div className="mt-4">
-                <span className="text-[10px] text-primary-fixed-dim font-semibold bg-primary-container/20 border border-primary-container/30 px-2 py-0.5 rounded-full inline-block">
-                  On Track
-                </span>
-                <span className="text-[10px] text-on-surface-variant block mt-2">Active fundamentals modules completed</span>
+              <div className="mt-3 flex flex-wrap gap-1">
+                {subjectList.length > 0 ? (
+                  subjectList.slice(0, 6).map((s) => (
+                    <span
+                      key={s.skill_key}
+                      className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-md border ${
+                        s.confidence >= 70
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                          : s.confidence >= 40
+                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                            : 'bg-red-500/10 text-red-400 border-red-500/20'
+                      }`}
+                    >
+                      {s.label}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-[10px] text-on-surface-variant">Complete onboarding to see subject scores</span>
+                )}
               </div>
             </div>
 
@@ -285,22 +336,38 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* KPI Card 4: Resume Score */}
-            <div className="bg-surface-card border border-border-subtle rounded-2xl p-5 flex flex-col justify-between card-hover-effect">
+            {/* KPI Card 4: Quiz Accuracy */}
+            <div
+              className="bg-surface-card border border-border-subtle rounded-2xl p-5 flex flex-col justify-between card-hover-effect cursor-pointer"
+              onClick={() => navigate('/interview-hub/quiz')}
+              title="Go to Quiz Engine"
+            >
               <div className="flex justify-between items-start">
                 <div>
-                  <span className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">Resume ATS Score</span>
-                  <p className="text-2xl font-bold text-on-surface mt-1">{stats.resume_score}%</p>
+                  <span className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">Quiz Accuracy</span>
+                  {quizAttempted > 0 ? (
+                    <p className="text-2xl font-bold text-on-surface mt-1">
+                      {quizAccuracy}% <span className="text-xs text-on-surface-variant">accuracy</span>
+                    </p>
+                  ) : (
+                    <p className="text-sm text-on-surface-variant mt-2">No quizzes yet</p>
+                  )}
                 </div>
                 <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-warning/10 text-warning">
-                  <FileText className="h-4 w-4" />
+                  <BarChart2 className="h-4 w-4" />
                 </div>
               </div>
               <div className="mt-4 space-y-1">
                 <div className="w-full bg-surface-container-high rounded-full h-1.5 overflow-hidden">
-                  <div className="bg-warning h-full rounded-full transition-all duration-500" style={{ width: `${stats.resume_score}%` }}></div>
+                  <div className="bg-warning h-full rounded-full transition-all duration-500" style={{ width: `${quizAccuracy}%` }}></div>
                 </div>
-                <span className="text-[10px] text-on-surface-variant block">Bullet metrics alignment score</span>
+                {quizAttempted > 0 ? (
+                  <span className="text-[10px] text-on-surface-variant block">
+                    {quizCorrect} correct of {quizAttempted} attempted
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-on-surface-variant block">Take a quiz to start tracking accuracy</span>
+                )}
               </div>
             </div>
 

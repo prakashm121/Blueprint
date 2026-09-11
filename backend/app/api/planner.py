@@ -1,5 +1,6 @@
 from datetime import date, timedelta, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import case
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List
@@ -9,6 +10,7 @@ from app.core.cache import get_cache, set_cache, delete_cache, redis_client
 from app.db.session import get_db
 from app.models.user import User
 from app.models.planner import WeeklyPlan, PlannerTask
+from app.models.assessment import UserSkillAssessment
 from app.services.context_builder import build_daily_planner_context, build_weekly_plan_context
 from app.services.ai_service import generate_weekly_tasks_async, generate_daily_breakdown_async
 from app.workers.outbox import enqueue_outbox
@@ -17,6 +19,21 @@ from app.workers import event_types as ET
 router = APIRouter()
 
 _HIDDEN = ("Archived", "Deleted")
+
+# Category → skill_key mapping for passive confidence nudge on task completion (Phase 2)
+PLANNER_CATEGORY_TO_SKILL_KEY = {
+    "OS":                  "operating_systems",
+    "Operating Systems":   "operating_systems",
+    "DBMS":                "dbms",
+    "Database":            "dbms",
+    "Networks":            "computer_networks",
+    "Computer Networks":   "computer_networks",
+    "System Design":       "system_design",
+    "OOP":                 "object_oriented_programming",
+    "DSA":                 "data_structures",
+}
+
+MAX_CARRY_OVER = 3  # Cap: ensures at least 4 fresh AI tasks every week
 
 
 def _invalidate_planner_cache(user_id: int):
@@ -203,26 +220,10 @@ async def create_plan(
         .first()
     )
 
-    carry_over_tasks = []
-    if existing:
-        pending_tasks = db.query(PlannerTask).filter(
-            PlannerTask.weekly_plan_id == existing.id,
-            PlannerTask.status == "Pending",
-        ).all()
-        for pt in pending_tasks:
-            carry_over_tasks.append({
-                "title": pt.title,
-                "category": pt.category,
-                "priority": pt.priority,
-                "estimated_minutes": pt.estimated_minutes,
-            })
-            pt.status = "Carried Over"
-        existing.status = "archived"
-        db.add(existing)
-
     today = date.today()
     iso_cal = today.isocalendar()
 
+    # Create the new plan first so we have plan.id for carry-over FK reassignment
     plan = WeeklyPlan(
         user_id=current_user.id,
         title=plan_in.title or f"Week {iso_cal[1]} Plan",
@@ -234,15 +235,60 @@ async def create_plan(
         status="active",
     )
     db.add(plan)
-    db.flush()
+    db.flush()  # get plan.id before reassigning carry-over task FKs
 
-    carry_over_titles = [t["title"] for t in carry_over_tasks]
-    new_count = max(0, 7 - len(carry_over_tasks))
+    # Carry-over fix: MOVE pending rows into the new plan (not copy).
+    # Cap at MAX_CARRY_OVER=3 (priority order: High > Medium > Low).
+    # Tasks beyond the cap are dropped cleanly — student isn't doing them.
+    # Eliminates: dead 'Carried Over' rows, new_count hitting 0, frozen AI output.
+    carry_over_count = 0
+    if existing:
+        pending_tasks = (
+            db.query(PlannerTask)
+            .filter(
+                PlannerTask.weekly_plan_id == existing.id,
+                PlannerTask.status == "Pending",
+            )
+            .order_by(
+                case(
+                    (PlannerTask.priority == "High",   1),
+                    (PlannerTask.priority == "Medium", 2),
+                    (PlannerTask.priority == "Low",    3),
+                    else_=4,
+                )
+            )
+            .all()
+        )
+
+        tasks_to_move = pending_tasks[:MAX_CARRY_OVER]
+        tasks_to_drop = pending_tasks[MAX_CARRY_OVER:]
+
+        for i, pt in enumerate(tasks_to_move):
+            # Move the row: reassign FK to the new plan, no new row, no dead row
+            pt.weekly_plan_id = plan.id
+            pt.due_date       = datetime.combine(
+                today + timedelta(days=min(i, 6)),
+                datetime.min.time(),
+                tzinfo=timezone.utc,
+            )
+            pt.display_order  = i
+
+        for pt in tasks_to_drop:
+            # Student isn't completing these — drop cleanly
+            existing.total_tasks = max(0, (existing.total_tasks or 0) - 1)
+            db.delete(pt)
+
+        carry_over_count = len(tasks_to_move)
+        existing.status = "archived"
+        db.add(existing)
+
+    new_count = max(0, 7 - carry_over_count)
+
 
     ai_tasks = []
     if new_count > 0:
         ctx = build_weekly_plan_context(db, current_user)
-        ai_tasks = await generate_weekly_tasks_async(ctx, carry_over_titles, new_count)
+        ai_tasks = await generate_weekly_tasks_async(ctx, [], new_count)
 
     if not ai_tasks and new_count > 0:
         fallback_tasks = [
@@ -253,16 +299,14 @@ async def create_plan(
             {"title": "Review company preparation notes", "category": "Company Preparation", "priority": "Low", "estimated_minutes": 30},
         ]
         for t in fallback_tasks:
-            if t["title"] not in carry_over_titles:
-                ai_tasks.append(t)
-                if len(ai_tasks) >= new_count:
-                    break
+            ai_tasks.append(t)
+            if len(ai_tasks) >= new_count:
+                break
 
-    all_tasks = carry_over_tasks + ai_tasks
-
-    for i, task_data in enumerate(all_tasks):
+    # Only insert AI-generated tasks here; carry-over tasks were already moved (FK reassigned above)
+    for i, task_data in enumerate(ai_tasks):
         task_due = datetime.combine(
-            today + timedelta(days=min(i, 6)),
+            today + timedelta(days=min(carry_over_count + i, 6)),
             datetime.min.time(),
             tzinfo=timezone.utc,
         )
@@ -273,12 +317,11 @@ async def create_plan(
             category=task_data.get("category", "General"),
             priority=task_data.get("priority", "Medium"),
             estimated_minutes=task_data.get("estimated_minutes", 30),
-            reminder_enabled=True,
             due_date=task_due,
-            display_order=i,
+            display_order=carry_over_count + i,
         ))
 
-    plan.total_tasks = len(all_tasks)
+    plan.total_tasks = carry_over_count + len(ai_tasks)
     db.commit()
     db.refresh(plan)
     _invalidate_planner_cache(current_user.id)
@@ -366,11 +409,26 @@ def update_task(
             idempotency_key=f"planner-completed:{task.id}",
         )
 
+        # Passive confidence nudge — bump the matching skill by +2 (cap 95)
+        skill_key = PLANNER_CATEGORY_TO_SKILL_KEY.get(task.category)
+        if skill_key:
+            assessment = (
+                db.query(UserSkillAssessment)
+                .filter(
+                    UserSkillAssessment.user_id == current_user.id,
+                    UserSkillAssessment.skill_key == skill_key,
+                )
+                .first()
+            )
+            if assessment:
+                assessment.self_rated_confidence = min(95, assessment.self_rated_confidence + 2)
+
     db.commit()
     db.refresh(task)
     _invalidate_planner_cache(current_user.id)
     delete_cache(f"mentor:context:{current_user.id}")
     return task
+
 
 
 # ---------------------------------------------------------------------------

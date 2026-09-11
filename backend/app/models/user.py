@@ -19,6 +19,7 @@ class User(Base):
     onboarding_step = Column(String(30), nullable=False, default="profile")
     target_role = Column(String(100), nullable=True)
     target_companies = Column(Text, nullable=True)  # JSON array of company names
+    preparation_status = Column(String(50), nullable=True, default="early")
     onboarding_completed_at = Column(DateTime(timezone=True), nullable=True)
     email_verified = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

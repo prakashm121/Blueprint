@@ -4,10 +4,14 @@ Each function targets a specific feature: mentor chat, weekly task generation, d
 """
 import asyncio
 import json
+import re
 
 import google.generativeai as genai
 
 from app.core.config import settings
+from app.core.constants import ALLOWED_TASKS
+from app.prompts.teacher import get_teacher_prompt
+from app.prompts.mentor import get_mentor_prompt
 
 genai.configure(api_key=settings.GEMINI_API_KEY)
 
@@ -18,18 +22,36 @@ roadmap_model = genai.GenerativeModel(settings.GEMINI_MODEL)
 _GEMINI_SEMAPHORE = asyncio.Semaphore(int(getattr(settings, "GEMINI_CONCURRENCY", 10)))
 
 
-def generate_mentor_response(
+async def generate_teacher_response_async(
     context: dict,
+    topic: str,
     message: str,
     history: list[dict],
 ) -> str:
-    try:
-        return _call_gemini(context, message, history)
-    except Exception as e:
-        import traceback
+    timeout_s = float(getattr(settings, "GEMINI_REQUEST_TIMEOUT", 45.0))
+    prompt = get_teacher_prompt(context, topic)
+    
+    for turn in history[-6:]:
+        role = turn["role"].capitalize()
+        prompt += f"\n{role}: {turn['content']}"
 
-        traceback.print_exc()
-        raise e
+    prompt += f"\n\nUser:\n{message}\n\nGive a personalized answer. Keep it practical and highly educational. Answer in 2-4 short paragraphs."
+    
+    async with _GEMINI_SEMAPHORE:
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                roadmap_model.generate_content,
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    temperature=settings.GEMINI_TEMPERATURE,
+                    top_p=settings.GEMINI_TOP_P,
+                    top_k=settings.GEMINI_TOP_K,
+                    max_output_tokens=settings.GEMINI_MAX_TOKENS,
+                ),
+            ),
+            timeout=timeout_s,
+        )
+    return response.text.strip()
 
 
 async def generate_mentor_response_async(
@@ -38,66 +60,131 @@ async def generate_mentor_response_async(
     history: list[dict],
 ) -> str:
     timeout_s = float(getattr(settings, "GEMINI_REQUEST_TIMEOUT", 45.0))
-    async with _GEMINI_SEMAPHORE:
-        return await asyncio.wait_for(
-            asyncio.to_thread(generate_mentor_response, context, message, history),
-            timeout=timeout_s,
-        )
-
-
-def _call_gemini(
-    context: dict,
-    message: str,
-    history: list[dict],
-) -> str:
-
-    profile = context.get("profile", {})
-    weak = ", ".join(context.get("weak_areas", [])) or "None"
-
-    tone = context.get("tone_instruction", "Act as a patient, encouraging teacher who explains concepts clearly.")
+    prompt = get_mentor_prompt(context)
     
-    prompt = f"""
-You are PlacementOS AI, acting as a hybrid Career Mentor and Expert Teacher for an engineering student preparing for placements.
-
-Student Profile
-Name: {profile.get("full_name","Student")}
-College: {profile.get("college","Unknown")}
-Target Role: {profile.get("target_role","Software Engineer")}
-Weak Areas: {weak}
-
-Persona Instructions:
-1. When the student asks technical questions or needs help understanding a topic: Act as an expert, patient TEACHER. Break down complex concepts clearly and provide highly educational, easy-to-understand explanations.
-2. When the student asks about planning, career advice, or their schedule: Act as a Career MENTOR. Apply the following tone based on their current progress:
-   -> Mentor Tone: {tone}
-
-Important: Never be aggressive, harsh, or condescending. Always remain supportive.
-
-Conversation History
-"""
-
     for turn in history[-6:]:
         role = turn["role"].capitalize()
         prompt += f"\n{role}: {turn['content']}"
 
-    prompt += f"""
-
-User:
-{message}
-
-Give a personalized answer. Keep it practical and highly educational. Answer in 2-4 short paragraphs.
-"""
-
-    response = roadmap_model.generate_content(
-        prompt,
-        generation_config=genai.GenerationConfig(
-            temperature=settings.GEMINI_TEMPERATURE,
-            top_p=settings.GEMINI_TOP_P,
-            top_k=settings.GEMINI_TOP_K,
-            max_output_tokens=settings.GEMINI_MAX_TOKENS,
-        ),
-    )
-
+    prompt += f"\n\nUser:\n{message}\n\nGive a personalized answer. Answer in 2-4 short paragraphs."
+    
+    async with _GEMINI_SEMAPHORE:
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                roadmap_model.generate_content,
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    temperature=settings.GEMINI_TEMPERATURE,
+                    top_p=settings.GEMINI_TOP_P,
+                    top_k=settings.GEMINI_TOP_K,
+                    max_output_tokens=settings.GEMINI_MAX_TOKENS,
+                ),
+            ),
+            timeout=timeout_s,
+        )
     return response.text.strip()
+
+
+def detect_teacher_task(msg: str) -> str:
+    if any(x in msg for x in ["deep dive", "deep dive into", "in detail"]): return "deep_dive"
+    if any(x in msg for x in ["give an example", "example"]): return "example"
+    if any(x in msg for x in ["compare", "difference between", "vs"]): return "compare"
+    if any(x in msg for x in ["quiz me", "test me"]): return "quiz"
+    if any(x in msg for x in ["practice", "practice questions"]): return "practice"
+    return "explain"
+
+def detect_mentor_task(msg: str) -> str:
+    if "what should i learn" in msg: return "roadmap"
+    if "career" in msg: return "career_advice"
+    if "weak" in msg or "skill gap" in msg: return "skill_gap"
+    if "interview" in msg: return "interview_prep"
+    return "general"
+    
+def get_mentor_score(msg: str) -> int:
+    mentor_score = 0
+    if "what should i learn" in msg: mentor_score += 3
+    if "next" in msg: mentor_score += 2
+    if "career" in msg: mentor_score += 3
+    if "roadmap" in msg: mentor_score += 3
+    if "prepare for" in msg: mentor_score += 2
+    if "placement" in msg: mentor_score += 2
+    return mentor_score
+
+
+async def resolve_conversation_state_async(
+    current_mode: str | None,
+    current_topic: str | None,
+    current_task: str,
+    message: str,
+    history: list[dict]
+) -> dict:
+    msg_lower = message.lower().strip()
+    
+    # 1. Deterministic Explicit Switches
+    if "switch to mentor" in msg_lower or "act as a mentor" in msg_lower:
+        return {"action": "switch_to_mentor", "mode": "mentor", "topic": None, "task": "general"}
+    if "switch to teacher" in msg_lower or "act as a teacher" in msg_lower:
+        return {"action": "switch_to_teacher", "mode": "teacher", "topic": current_topic, "task": "general"}
+    
+    match = re.search(r"teach me about ([\w\s]+)", msg_lower)
+    if match:
+        return {"action": "switch_to_teacher", "mode": "teacher", "topic": match.group(1).strip()[:100], "task": "explain"}
+
+    # 2. Existing Conversation Fast-Paths
+    if current_mode == "teacher":
+        if get_mentor_score(msg_lower) >= 3:
+            return {"action": "switch_to_mentor", "mode": "mentor", "topic": None, "task": detect_mentor_task(msg_lower)}
+        # Otherwise, assume normal follow-up
+        return {"action": "stay", "mode": "teacher", "topic": current_topic, "task": detect_teacher_task(msg_lower)}
+
+    if current_mode == "mentor":
+        # Any explicit "teach me" is already caught above. Assume mentor follow up.
+        return {"action": "stay", "mode": "mentor", "topic": None, "task": detect_mentor_task(msg_lower)}
+
+    # 3. Fallback for Brand New Conversations (No existing mode)
+    prompt = f"""You are a conversation router for an engineering student platform.
+We have two agents:
+- TEACHER: Explains technical concepts, quizzes the student, deep dives into technical subjects.
+- MENTOR: Gives career advice, roadmap planning, interview strategy, and identifies skill gaps.
+
+User Message: {message}
+
+Output ONLY a JSON object with this exact schema:
+{{
+  "action": "stay" | "switch_to_teacher" | "switch_to_mentor",
+  "mode": "teacher" | "mentor",
+  "topic": "string or null",
+  "task": "general" | "explain" | "deep_dive" | "example" | "compare" | "quiz" | "practice" | "roadmap" | "career_advice" | "skill_gap" | "interview_prep"
+}}
+"""
+    try:
+        timeout_s = float(getattr(settings, "GEMINI_REQUEST_TIMEOUT", 15.0))
+        async with _GEMINI_SEMAPHORE:
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    roadmap_model.generate_content,
+                    prompt,
+                    generation_config=genai.GenerationConfig(response_mime_type="application/json"),
+                ),
+                timeout=timeout_s,
+            )
+        state = _parse_gemini_json(response.text)
+        
+        if state.get("mode") not in ["teacher", "mentor"]:
+            state["mode"] = "mentor"
+        if state.get("task") not in ALLOWED_TASKS:
+            state["task"] = "general"
+            
+        return state
+        
+    except Exception as e:
+        print(f"Router failed: {e}. Falling back to mentor state.")
+        return {
+            "action": "stay",
+            "mode": "mentor",
+            "topic": None,
+            "task": "general"
+        }
 
 
 def _parse_gemini_json(text: str) -> any:
@@ -131,20 +218,33 @@ async def generate_weekly_tasks_async(
     progress  = ctx.get("progress", {})
     weak_areas = ctx.get("weak_areas", [])
     done_titles = ctx.get("completed_task_titles", [])
+    roadmap_milestones = ctx.get("next_roadmap_milestones", [])
 
-    target_role       = profile.get("target_role", "Software Engineer")
-    target_companies  = ", ".join(profile.get("target_companies", [])) or "Not specified"
-    college           = profile.get("college", "Unknown")
-    specialization    = profile.get("specialization", "Unknown")
-    grad_year         = profile.get("graduation_year", "Unknown")
+    target_role          = profile.get("target_role", "Software Engineer")
+    target_companies     = ", ".join(profile.get("target_companies", [])) or "Not specified"
+    college              = profile.get("college", "Unknown")
+    specialization       = profile.get("specialization", "Unknown")
+    grad_year            = profile.get("graduation_year", "Unknown")
+    preparation_status   = profile.get("preparation_status", "early")
+    months_to_graduation = profile.get("months_to_graduation", None)
 
     readiness     = progress.get("readiness_score", 0)
     plan_done_pct = progress.get("planner_completion", 0)
     dsa_solved    = progress.get("dsa_solved", 0)
 
-    completed_str   = "\n".join(f"- {t}" for t in done_titles) if done_titles else "None yet"
-    carry_str       = "\n".join(f"- {t}" for t in carry_over_titles) if carry_over_titles else "None"
-    weak_str        = ", ".join(weak_areas) if weak_areas else "None identified"
+    completed_str = "\n".join(f"- {t}" for t in done_titles) if done_titles else "None yet"
+    carry_str     = "\n".join(f"- {t}" for t in carry_over_titles) if carry_over_titles else "None"
+    weak_str      = ", ".join(weak_areas) if weak_areas else "None identified"
+    milestone_str = "\n".join(f"- {m['title']} ({m['category']})" for m in roadmap_milestones) if roadmap_milestones else "No roadmap yet — generate tasks across DSA, Subjects, Resume."
+
+    urgency = ""
+    if months_to_graduation is not None:
+        if months_to_graduation <= 3:
+            urgency = f"URGENT: Only {months_to_graduation} month(s) to graduation. Prioritize mock interviews, resume, and company-specific prep."
+        elif months_to_graduation <= 6:
+            urgency = f"Final stretch: {months_to_graduation} months to graduation. Focus on completing weak areas and increasing DSA solve count."
+        else:
+            urgency = f"{months_to_graduation} months to graduation (stage: {preparation_status}). Build strong fundamentals first."
 
     prompt = f"""You are an expert AI Career Coach.
 
@@ -153,10 +253,16 @@ async def generate_weekly_tasks_async(
 - Target Companies: {target_companies}
 - College: {college} | {specialization} | Graduation: {grad_year}
 
+## Time Context
+{urgency}
+
 ## Current Progress
 - Readiness Score: {readiness:.0f}/100
 - Last week planner completion: {plan_done_pct:.0f}%
 - DSA problems solved: {dsa_solved}
+
+## Roadmap — Next Milestones to Work Toward
+{milestone_str}
 
 ## Task History
 ### Carrying over from last week (DO NOT duplicate):
@@ -170,11 +276,11 @@ async def generate_weekly_tasks_async(
 
 ## Instructions
 Generate exactly {new_count} NEW tasks for this week that:
-1. Do NOT repeat any carried-over or already-completed topics.
-2. Prioritize the student's weak areas.
-3. Are specific and actionable (not generic).
-4. Are relevant to the target role: {target_role}.
-5. Are balanced across: DSA, Core Subjects, Resume, Projects, Company Preparation.
+1. Directly advance one or more of the roadmap milestones listed above.
+2. Do NOT repeat any carried-over or already-completed topics.
+3. Prioritize weak areas and time-sensitive milestones given the urgency context.
+4. Are specific and actionable — not generic.
+5. Are relevant to the target role: {target_role}.
 
 Return a JSON array of exactly {new_count} objects:
 [
@@ -244,17 +350,315 @@ Example: [{{"title": "Solve Two Sum on LeetCode", "category": "DSA", "estimated_
         print(f"Failed to generate daily breakdown: {e}")
         return []
 
-async def generate_role_roadmap_async(target_role: str) -> list[dict]:
-    prompt = f"""
-You are an expert AI Career Coach. Generate a comprehensive, step-by-step learning roadmap for a {target_role}, going from beginner to advanced topics.
+async def generate_role_roadmap_async(
+    target_role: str,
+    weak_areas: list[str],
+    target_companies: list[str],
+    preparation_status: str = "early",
+) -> list[dict]:
+    """
+    Generate a flat list of 10–15 placement milestones for the given role.
+    Weak areas are surfaced earlier in priority order.
+    Returns [] on any failure so the caller can use the hardcoded fallback.
+    """
+    weak_str = ", ".join(weak_areas) if weak_areas else "None identified"
+    companies_str = ", ".join(target_companies) if target_companies else "Top product companies"
 
-Return a JSON array of objects, where each object represents a milestone or phase in the roadmap. Each object must have:
-- "phase": string (e.g., "Phase 1: Foundations", "Phase 2: Core Skills")
-- "description": string (A brief summary of this phase)
-- "topics": list of strings (The key topics to learn in this phase)
+    stage_context = {
+        "not_started":    "The student is just beginning — prioritize DSA foundations and core subjects.",
+        "early":          "The student has started preparation — build breadth across DSA and subjects.",
+        "mid":            "The student is mid-preparation — shift toward system design, projects, and interview practice.",
+        "final_stretch":  "The student is in the final stretch — focus on mock interviews, company-specific prep, and resume polish.",
+    }.get(preparation_status, "Build strong fundamentals first.")
+
+    prompt = f"""You are an expert AI Career Coach and Engineering Interview Preparation Planner.
+
+Your task is to generate a personalized, role-specific placement preparation roadmap for an engineering student.
+
+## Student Context
+
+Target Role:
+{target_role}
+
+Target Companies:
+{companies_str}
+
+Preparation Stage:
+{preparation_status}
+
+Stage Guidance:
+{stage_context}
+
+Weak Areas:
+{weak_str}
+
+## Your Objective
+
+Create a practical roadmap that takes the student from their current preparation stage to being interview-ready for the target role.
+
+The roadmap must be specifically designed around the requirements of:
+
+1. The target role
+2. The target companies
+3. The student's preparation stage
+4. The student's weak areas
+
+Do NOT generate a generic software-engineering roadmap.
+
+Before generating the milestones, internally determine:
+
+* The most important skills required for the target role.
+* The skills most commonly evaluated in interviews for this role.
+* Which skills are prerequisites for other skills.
+* Which of those skills are currently represented by the student's weak areas.
+* Which projects would provide strong evidence of competence for this role.
+* Which system-design concepts are appropriate for the student's level.
+* Which company-specific topics should be prepared later.
+
+Do this reasoning internally. Do not include the reasoning in the output.
+
+## Roadmap Requirements
+
+Generate exactly 10–15 milestones.
+
+Each milestone must:
+
+* Be concrete and actionable.
+* Take approximately 1–3 weeks to complete.
+* Produce a meaningful outcome.
+* Have a clear relationship to the target role.
+* Avoid duplicating another milestone.
+* Build upon previously completed milestones where appropriate.
+* Be realistic for an engineering student preparing for placements.
+
+The roadmap should progress approximately as:
+
+Foundations → Role Skills → Practical Implementation → Projects/System Design → Interview Preparation → Company Preparation → Mock Interviews
+
+However, change this ordering when the student's preparation stage or weak areas require it.
+
+## Weak Area Prioritization
+
+Weak areas are high priority.
+
+If a weak area is relevant to the target role:
+
+* Address it early in the roadmap.
+* Give it sufficient depth.
+* Do not simply mention the topic.
+* Convert it into a measurable preparation milestone.
+
+However, do not force an unrelated weak area into the roadmap merely because it was provided.
+
+## Category Constraints
+
+Allowed categories:
+
+* DSA
+* Subjects
+* System Design
+* Resume
+* Projects
+* Company Preparation
+* Mock Interview
+
+Maximum DSA milestones: 3
+
+At least 5 milestones must focus directly on role-specific skills, tools, frameworks, architectures, or engineering practices.
+
+For example, for a Backend Engineer, role-specific milestones may include:
+
+* REST API design
+* Authentication and authorization
+* PostgreSQL/database optimization
+* ORM usage
+* Redis/caching
+* Message queues
+* Background jobs
+* Distributed systems
+* API scalability
+* Observability
+* Docker/deployment
+* Backend architecture
+
+Do NOT blindly use these examples for every role.
+
+First determine the actual technical requirements of {target_role}, then select the most relevant skills.
+
+## Role-Specificity Rule
+
+Every milestone should answer:
+
+"What does this student need to learn, build, or demonstrate to become employable/interview-ready for {target_role}?"
+
+Avoid vague milestones such as:
+
+* "Learn backend"
+* "Study databases"
+* "Improve DSA"
+* "Learn system design"
+* "Prepare for interviews"
+* "Work on projects"
+
+Instead make them measurable and specific.
+
+Bad:
+"Learn databases"
+
+Good:
+"Optimize PostgreSQL Queries and Database Design"
+
+Description:
+"Practice schema design, indexing, EXPLAIN plans, joins, transactions, and query optimization by profiling and improving queries in a real project."
+
+## Project Requirements
+
+Projects should demonstrate the student's target-role skills.
+
+Prefer projects that combine multiple relevant technologies and concepts rather than simple CRUD applications.
+
+A strong project milestone should specify what the student should build and what engineering concepts it should demonstrate.
+
+For example:
+
+"Build a Production-Style Backend with Authentication, PostgreSQL, Redis, and Background Jobs"
+
+rather than:
+
+"Build a backend project"
+
+## System Design Requirements
+
+System Design milestones must match the student's preparation stage.
+
+For early-stage students:
+
+* Focus on scalability fundamentals, APIs, databases, caching, load balancing, etc.
+
+For mid-stage students:
+
+* Include architecture design, distributed systems, queues, replication, partitioning, consistency, reliability, etc.
+
+For final-stage students:
+
+* Focus on solving complete system-design interview problems under time constraints.
+
+Do not introduce highly advanced distributed-system concepts before their prerequisites.
+
+## DSA Requirements
+
+Maximum 3 DSA milestones.
+
+Combine related DSA topics intelligently rather than creating one milestone for every small topic.
+
+For example:
+
+"Master Arrays, Hashing, Two Pointers, Sliding Window, and Binary Search"
+
+is preferable to creating five separate milestones.
+
+DSA milestones should focus on interview problem-solving ability, not merely completing a list of topics.
+
+## Company Preparation
+
+Company preparation should come toward the later part of the roadmap unless the preparation stage indicates otherwise.
+
+Focus on:
+
+* Frequently tested DSA patterns
+* Role-specific technical topics
+* Common interview rounds
+* Company-specific technologies where relevant
+* Behavioral questions
+* Previous interview patterns when known
+* Resume/project discussion preparation
+
+Do not invent company-specific interview facts.
+
+## Mock Interviews
+
+The final milestones should prepare the student to perform under interview conditions.
+
+Include appropriate combinations of:
+
+* DSA timed practice
+* Core-subject questioning
+* Role-specific technical interviews
+* Project deep dives
+* System-design interviews
+* Behavioral interviews
+* Full mock interviews
+
+## Priority Ordering
+
+Use `priority_order` starting from 0.
+
+Lower numbers mean higher priority.
+
+Order milestones according to:
+
+1. Critical weak areas
+2. Prerequisite foundations
+3. Core role-specific skills
+4. Practical implementation
+5. Projects
+6. System design
+7. Resume refinement
+8. Company-specific preparation
+9. Mock interviews
+
+This is guidance, not a rigid ordering. Adjust it when dependencies require a different sequence.
+
+## Quality Rules
+
+Before returning the answer, internally verify:
+
+* There are 10–15 milestones.
+* There are no duplicate milestones.
+* No more than 3 milestones have category `DSA`.
+* At least 5 milestones directly develop target-role-specific skills.
+* Weak areas relevant to the role appear early.
+* Milestones follow reasonable learning dependencies.
+* Every milestone is actionable.
+* Every milestone can realistically be completed in 1–3 weeks.
+* The roadmap contains appropriate coverage of DSA, Core Subjects, System Design, Projects, Resume, Company Preparation, and Mock Interviews.
+* The roadmap is appropriate for the student's preparation stage.
+* The roadmap is specific to `{target_role}`.
+* `priority_order` values are unique, sequential integers starting from 0.
+* No unnecessary technologies are introduced simply to make the roadmap appear advanced.
+
+## Output Format
+
+Return ONLY a valid JSON array.
+
+Do not include:
+
+* Markdown
+* Code fences
+* Explanations outside the JSON
+* Reasoning
+* Additional fields
+
+Each object must contain exactly these fields:
+
+* `title`: string
+* `description`: string (A step-by-step task breakdown separated by newlines, e.g. "- First task\n- Second task\n- Third task")
+* `category`: one of `DSA`, `Subjects`, `System Design`, `Resume`, `Projects`, `Company Preparation`, `Mock Interview`
+* `priority_order`: integer
+
+The final JSON must follow this structure:
+
+[
+{{
+"title": "Specific actionable milestone",
+"description": "- Explain the first step exactly\n- Explain the second step to build/practice\n- Explain the third step for mastery",
+"category": "Projects",
+"priority_order": 0
+}}
+]
 """
     try:
-        timeout_s = float(getattr(settings, "GEMINI_REQUEST_TIMEOUT", 45.0))
+        timeout_s = float(getattr(settings, "GEMINI_REQUEST_TIMEOUT", 60.0))
         async with _GEMINI_SEMAPHORE:
             response = await asyncio.wait_for(
                 asyncio.to_thread(
@@ -264,10 +668,10 @@ Return a JSON array of objects, where each object represents a milestone or phas
                 ),
                 timeout=timeout_s,
             )
-        roadmap = _parse_gemini_json(response.text)
-        if not isinstance(roadmap, list):
-            raise ValueError("Expected a JSON array for roadmap.")
-        return roadmap
+        milestones = _parse_gemini_json(response.text)
+        if not isinstance(milestones, list):
+            raise ValueError("Expected a JSON array of milestones.")
+        return milestones[:15]
     except Exception as e:
         print(f"Failed to generate role roadmap: {e}")
         return []

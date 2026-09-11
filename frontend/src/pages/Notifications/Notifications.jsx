@@ -51,7 +51,7 @@ export default function Notifications({ isOpen, onClose }) {
   return (
     /* Backdrop */
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex justify-end bg-black/40 backdrop-blur-sm"
       onClick={onClose}
     >
       {/* Drawer panel */}

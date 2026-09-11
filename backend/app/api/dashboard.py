@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from typing import Optional
 
 from app.api.deps import get_current_active_user
 from app.db.session import get_db
@@ -17,13 +18,15 @@ class DashboardProfile(BaseModel):
     college_name: str | None = None
     degree: str | None = None
     graduation_year: int | None = None
-    target_role : str | None = None
+    target_role: str | None = None
+
 
 class DashboardTask(BaseModel):
     id: int
     text: str
     completed: bool
     category: str
+
 
 class DashboardSummary(BaseModel):
     profile: DashboardProfile
@@ -34,8 +37,6 @@ class DashboardSummary(BaseModel):
     planner_completion: float
     dsa_solved: int
     dsa_total: int = 200
-    subjects_completed: int
-    resume_score: float
     unread_notifications_count: int = 0
     focus_tasks: list[DashboardTask] = []
 
@@ -45,6 +46,12 @@ def get_dashboard(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    from app.models.assessment import UserSkillAssessment
+    from app.models.hub_progress import UserCodingProgress
+    from app.models.hub import DSAProblem
+    from app.models.roadmap import RoleRoadmap, RoadmapMilestone
+    from sqlalchemy import func
+
     profile = current_user.profile
     stats = db.query(DashboardStatistics).filter(
         DashboardStatistics.user_id == current_user.id
@@ -57,26 +64,7 @@ def get_dashboard(
         db.commit()
         db.refresh(stats)
 
-    # Determine next milestone
-    next_milestone = "Complete onboarding profile"
-    if profile and profile.college_name:
-        next_milestone = "Create your first weekly plan"
-        if float(stats.planner_completion or 0) > 0:
-            next_milestone = "Keep completing tasks to improve readiness"
-
-    profile_data = DashboardProfile(
-        full_name=profile.full_name if profile else current_user.full_name,
-        college_name=profile.college_name if profile else None,
-        degree=profile.degree if profile else None,
-        graduation_year=profile.graduation_year if profile else None,
-        target_role = profile.user.target_role if profile.user else None
-    )
-
-    from app.models.hub_progress import UserCodingProgress, UserQuizAttempt
-    from app.models.hub import DSAProblem
-    from sqlalchemy import func
-
-    # Calculate DSA solved dynamically : temporary calculation
+    # Calculate DSA solved dynamically
     dsa_solved = db.query(func.count(func.distinct(UserCodingProgress.dsa_id))).filter(
         UserCodingProgress.user_id == current_user.id,
         UserCodingProgress.status == "solved"
@@ -84,11 +72,37 @@ def get_dashboard(
 
     dsa_total = db.query(DSAProblem).count()
 
-    # Calculate Core Subjects (distinct correct quiz questions)
-    subjects_completed = db.query(func.count(func.distinct(UserQuizAttempt.quiz_id))).filter(
-        UserQuizAttempt.user_id == current_user.id,
-        UserQuizAttempt.is_correct == True
-    ).scalar() or 0
+    # Determine next milestone — prefer first pending roadmap milestone, else generic message
+    next_milestone = "Complete onboarding to generate your roadmap"
+    roadmap = (
+        db.query(RoleRoadmap)
+        .filter(RoleRoadmap.user_id == current_user.id)
+        .first()
+    )
+    if roadmap:
+        first_pending = (
+            db.query(RoadmapMilestone)
+            .filter(
+                RoadmapMilestone.roadmap_id == roadmap.id,
+                RoadmapMilestone.status == "pending",
+            )
+            .order_by(RoadmapMilestone.priority_order.asc())
+            .first()
+        )
+        if first_pending:
+            next_milestone = first_pending.title
+        else:
+            next_milestone = "All roadmap milestones completed 🎉"
+    elif profile and profile.college_name:
+        next_milestone = "Create your first weekly plan"
+
+    profile_data = DashboardProfile(
+        full_name=profile.full_name if profile else current_user.full_name,
+        college_name=profile.college_name if profile else None,
+        degree=profile.degree if profile else None,
+        graduation_year=profile.graduation_year if profile else None,
+        target_role=current_user.target_role,
+    )
 
     # Sync weekly task counts from active planner
     active_plan = (
@@ -108,23 +122,19 @@ def get_dashboard(
             stats.planner_completion = planner_completion
             db.commit()
 
-    # Calculate overall readiness dynamically : temporarily
+    # Calculate overall readiness dynamically
     dsa_score = min((dsa_solved / dsa_total) * 100, 100) if dsa_total > 0 else 0
     weekly_score = (weekly_completed / weekly_total * 100) if weekly_total > 0 else 0
-    resume_score = round(float(stats.resume_score or 0), 1)
-    overall_readiness = round((dsa_score * 0.4) + (weekly_score * 0.4) + (resume_score * 0.2), 1)
+    overall_readiness = round((dsa_score * 0.5) + (weekly_score * 0.5), 1)
 
     return DashboardSummary(
         profile=profile_data,
         overall_readiness=overall_readiness,
         weekly_tasks_completed=weekly_completed,
         weekly_tasks_total=weekly_total,
-        upcoming_interviews=int(stats.interviews_completed or 0),
         next_milestone=next_milestone,
         planner_completion=planner_completion,
         dsa_solved=dsa_solved,
         dsa_total=dsa_total,
-        subjects_completed=subjects_completed,
-        resume_score=resume_score,
         unread_notifications_count=get_unread_count(db, current_user.id),
     )

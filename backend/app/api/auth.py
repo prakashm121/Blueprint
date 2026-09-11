@@ -14,6 +14,7 @@ from app.api import deps
 from app.services.verification_service import create_verification_record, verify_email_token
 from app.workers.outbox import enqueue_outbox
 from app.workers import event_types as ET
+from app.workers.celery_tasks import process_outbox_task
 
 router = APIRouter()
 
@@ -115,6 +116,15 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=400, detail="User already exists")
 
+    # Dispatch immediately so the worker processes the outbox row now,
+    # not at the next 10s poll cycle.
+    # The outbox row is the safety net if this dispatch fails.
+    try:
+        process_outbox_task.delay()
+    except Exception:
+        # Redis unavailable — the 10s poller will catch it
+        pass
+
     return RegisterResponse(
         user_id=user.id,
         email=user.email,
@@ -135,6 +145,11 @@ def resend_verification(body: ResendRequest, db: Session = Depends(get_db)):
     if user and not user.email_verified:
         _queue_verification_email(db, user)
         db.commit()
+        try:
+            process_outbox_task.delay()
+        except Exception:
+            # Redis unavailable — the 10s poller will catch it
+            pass
     return {
         "success": True,
         "message": "If that email is registered and unverified, a verification link has been sent.",

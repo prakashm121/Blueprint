@@ -1,9 +1,21 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api';
-import { ChevronRight, Sparkles, Target, GraduationCap, Check } from 'lucide-react';
+import { ChevronRight, Sparkles, Target, GraduationCap, Check, Map } from 'lucide-react';
 
 const STEPS = ['profile', 'assessment', 'goals', 'roadmap'];
+
+// Calibration hints shown below each slider to help students rate accurately
+const CONFIDENCE_HINTS = {
+  operating_systems: 'Can you explain process scheduling, deadlocks, and virtual memory?',
+  dbms: 'Can you write complex SQL joins, explain normalization, and discuss indexing?',
+  computer_networks: 'Do you know how TCP/IP, DNS, and HTTP/HTTPS work end to end?',
+  system_design: 'Can you design a URL shortener or chat app with scale in mind?',
+  arrays_strings: 'Can you solve Two Sum, Sliding Window, and prefix sum problems?',
+  trees_graphs: 'Can you traverse trees and graphs, and implement BFS/DFS from scratch?',
+  dynamic_programming: 'Can you identify DP sub-problems and solve knapsack or LCS?',
+  sorting_searching: 'Can you implement binary search and explain quicksort/mergesort?',
+};
 
 function StepIndicator({ current }) {
   const idx = STEPS.indexOf(current);
@@ -25,12 +37,14 @@ function StepIndicator({ current }) {
   );
 }
 
-function ConfidenceSlider({ label, value, onChange }) {
+function ConfidenceSlider({ skillKey, label, value, onChange }) {
+  const hint = CONFIDENCE_HINTS[skillKey];
+  const color = value >= 70 ? 'text-emerald-400' : value >= 40 ? 'text-amber-400' : 'text-red-400';
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-2">
         <span className="text-sm font-medium text-slate-200">{label}</span>
-        <span className="text-sm font-semibold text-sky-400">{value}%</span>
+        <span className={`text-sm font-semibold ${color}`}>{value}%</span>
       </div>
       <input
         type="range"
@@ -41,6 +55,9 @@ function ConfidenceSlider({ label, value, onChange }) {
         onChange={(e) => onChange(Number(e.target.value))}
         className="w-full accent-sky-500"
       />
+      {hint && (
+        <p className="mt-2 text-xs text-slate-500 leading-relaxed italic">{hint}</p>
+      )}
     </div>
   );
 }
@@ -56,28 +73,36 @@ export default function Onboarding() {
   const [confidence, setConfidence] = useState({});
   const [goals, setGoals] = useState({ target_role: '', target_companies: [] });
   const [generating, setGenerating] = useState(false);
-  const [generationStatus, setGenerationStatus] = useState(null);
   const [initialLoading, setInitialLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       api.get('/api/v1/onboarding/status').catch(() => ({ data: {} })),
-      api.get('/api/v1/onboarding/catalog').catch(() => ({ data: null }))
-    ]).then(([statusRes, catalogRes]) => {
+      api.get('/api/v1/onboarding/catalog').catch(() => ({ data: null })),
+      api.get('/api/v1/assessments/subjects').catch(() => ({ data: null }))
+    ]).then(([statusRes, catalogRes, subjectsRes]) => {
       const s = statusRes.data?.onboarding_step;
       if (s === 'completed') {
-        navigate('/dashboard', { replace: true });
+        navigate('/roadmap', { replace: true });
         return;
       }
       if (s && STEPS.includes(s)) setStep(s);
       else if (s === 'generate_roadmap') setStep('roadmap');
+
+      // Build a map of existing confidences if the user has already saved some
+      const existingMap = {};
+      if (subjectsRes.data) {
+        [...(subjectsRes.data.subjects || []), ...(subjectsRes.data.dsa || [])].forEach((item) => {
+          existingMap[item.skill_key] = item.confidence;
+        });
+      }
 
       const catData = catalogRes.data;
       if (catData) {
         setCatalog(catData);
         const initial = {};
         [...(catData.subjects || []), ...(catData.dsa_topics || [])].forEach((item) => {
-          initial[item.key] = 50;
+          initial[item.key] = existingMap[item.key] !== undefined ? existingMap[item.key] : 50;
         });
         setConfidence(initial);
         if (!goals.target_role && catData.target_roles?.length) {
@@ -128,44 +153,22 @@ export default function Onboarding() {
     }
   };
 
+  // Single await — no polling, no setTimeout, no freeze
   const generateRoadmap = async () => {
     setGenerating(true);
     setError('');
     try {
-      const res = await api.post('/api/v1/onboarding/generate-roadmap');
-      const genId = res.data.planner_generation_id;
-      setGenerationStatus('queued');
-
-      let attempts = 0;
-      const MAX_ATTEMPTS = 40; // 40 * 1.5s = 60s timeout
-
-      const poll = async () => {
-        attempts++;
-        if (attempts > MAX_ATTEMPTS) {
-          setError('Roadmap generation timed out. Please check your dashboard later.');
-          setGenerating(false);
-          return;
-        }
-        try {
-          const statusRes = await api.get(`/api/v1/onboarding/roadmap-status/${genId}`);
-          setGenerationStatus(statusRes.data.status);
-          if (statusRes.data.status === 'completed') {
-            navigate('/dashboard', { replace: true });
-          } else if (statusRes.data.status === 'failed') {
-            setError('Roadmap generation failed. You can still continue to your dashboard.');
-            setGenerating(false);
-          } else {
-            setTimeout(poll, 1500);
-          }
-        } catch {
-          setTimeout(poll, 1500);
-        }
-      };
-      setTimeout(poll, 1000);
+      await api.post('/api/v1/onboarding/generate-roadmap');
+      navigate('/roadmap', { replace: true });
     } catch {
-      setError('Failed to start roadmap generation.');
+      setError('Failed to generate your roadmap. Please try again.');
       setGenerating(false);
     }
+  };
+
+  const skipToRoadmap = () => {
+    // Navigate unconditionally — works even if generating was somehow true
+    navigate('/roadmap', { replace: true });
   };
 
   const toggleCompany = (name) => {
@@ -241,6 +244,7 @@ export default function Onboarding() {
                 {catalog.subjects.map((s) => (
                   <ConfidenceSlider
                     key={s.key}
+                    skillKey={s.key}
                     label={s.label}
                     value={confidence[s.key] ?? 50}
                     onChange={(v) => setConfidence({ ...confidence, [s.key]: v })}
@@ -254,6 +258,7 @@ export default function Onboarding() {
                 {catalog.dsa_topics.map((d) => (
                   <ConfidenceSlider
                     key={d.key}
+                    skillKey={d.key}
                     label={d.label}
                     value={confidence[d.key] ?? 50}
                     onChange={(v) => setConfidence({ ...confidence, [d.key]: v })}
@@ -317,31 +322,37 @@ export default function Onboarding() {
         {step === 'roadmap' && (
           <div className="text-center space-y-6">
             <div className="inline-flex h-20 w-20 items-center justify-center rounded-3xl bg-sky-500/10 text-sky-300 mx-auto">
-              <Sparkles className="h-10 w-10" />
+              {generating ? (
+                <div className="w-10 h-10 rounded-full border-2 border-sky-400 border-t-transparent animate-spin" />
+              ) : (
+                <Map className="h-10 w-10" />
+              )}
             </div>
-            <p className="text-slate-400 leading-6">
-              We'll create a personalized weekly plan based on your profile, skills assessment, and career goals.
-            </p>
-            {generationStatus && (
-              <p className="text-sm text-sky-400 capitalize">Status: {generationStatus}...</p>
-            )}
+            <div className="space-y-2">
+              <h2 className="text-lg font-semibold text-white">
+                {generating ? 'Building your personalized roadmap…' : 'Ready to map your journey?'}
+              </h2>
+              <p className="text-slate-400 leading-6 text-sm">
+                {generating
+                  ? 'Our AI is analysing your weak areas and career goals. This takes 10–20 seconds.'
+                  : 'We\'ll generate a role-specific milestone roadmap tailored to your skills and target companies.'}
+              </p>
+            </div>
             <button
               type="button"
               onClick={generateRoadmap}
               disabled={generating}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-sky-500 px-4 py-3 text-base font-semibold text-slate-950 transition hover:bg-sky-400 disabled:opacity-50"
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-sky-500 px-4 py-3 text-base font-semibold text-slate-950 transition hover:bg-sky-400 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {generating ? 'Generating your roadmap...' : 'Generate my roadmap'}
+              {generating ? 'Generating…' : <><Sparkles className="h-4 w-4" /> Generate my roadmap</>}
             </button>
-            {!generating && (
-              <button
-                type="button"
-                onClick={() => navigate('/dashboard')}
-                className="text-sm text-slate-500 hover:text-slate-300"
-              >
-                Skip for now
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={skipToRoadmap}
+              className="text-sm text-slate-500 hover:text-slate-300 transition"
+            >
+              Skip for now → Go to roadmap
+            </button>
           </div>
         )}
       </div>

@@ -37,6 +37,7 @@ export default function Profile() {
     cgpa: '',
     target_role: '',
     target_companies: [],
+    preparation_status: 'early',
     linkedin_url: '',
     github_username: '',
     avatar_url: '',
@@ -57,6 +58,7 @@ export default function Profile() {
           cgpa: d.cgpa !== null && d.cgpa !== undefined ? String(d.cgpa) : '',
           target_role: d.target_role || '',
           target_companies: d.target_companies || [],
+          preparation_status: d.preparation_status || 'early',
           linkedin_url: d.linkedin_url || '',
           github_username: d.github_username || '',
           avatar_url: d.avatar_url || '',
@@ -298,6 +300,36 @@ export default function Profile() {
                       <span className="text-[10px] text-on-surface-variant self-center">{form.target_companies.length}/10</span>
                     </div>
                   )}
+                </div>
+
+                {/* Preparation Stage */}
+                <div>
+                  <label className={labelClass}>Preparation Stage</label>
+                  <p className="text-[11px] text-on-surface-variant mb-3 -mt-1">
+                    This shapes AI urgency, roadmap sequencing, and weekly plan priorities.
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { value: 'not_started',   label: 'Just Starting',     desc: 'Day 1 of prep' },
+                      { value: 'early',         label: 'Building Basics',   desc: '3–6 months out' },
+                      { value: 'mid',           label: 'Interview Prep',    desc: '1–3 months out' },
+                      { value: 'final_stretch', label: 'Final Sprint',      desc: 'Under 1 month' },
+                    ].map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => set('preparation_status', opt.value)}
+                        className={`rounded-xl border p-3 text-left transition-all ${
+                          form.preparation_status === opt.value
+                            ? 'bg-primary/10 border-primary/40 text-primary'
+                            : 'bg-surface-container border-border-subtle text-on-surface-variant hover:border-outline'
+                        }`}
+                      >
+                        <p className="text-xs font-semibold">{opt.label}</p>
+                        <p className="text-[10px] mt-0.5 opacity-70">{opt.desc}</p>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}

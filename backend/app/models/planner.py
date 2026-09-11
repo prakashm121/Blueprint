@@ -29,7 +29,12 @@ class WeeklyPlan(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    tasks = relationship("PlannerTask", back_populates="weekly_plan", cascade="all, delete-orphan")
+    tasks = relationship(
+        "PlannerTask",
+        back_populates="weekly_plan",
+        order_by="PlannerTask.display_order",
+        cascade="all, delete-orphan"
+    )
 
 
 class PlannerTask(Base):
@@ -46,9 +51,7 @@ class PlannerTask(Base):
     due_date = Column(DateTime(timezone=True), nullable=True)
     estimated_minutes = Column(Integer, nullable=True)
     actual_minutes = Column(Integer, nullable=True)
-    reminder_enabled = Column(Boolean, default=True)
     reminder_sent = Column(Boolean, default=False)
-    ai_generated = Column(Boolean, default=False)
     display_order = Column(Integer, nullable=False, default=0)
     version = Column(Integer, default=1)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

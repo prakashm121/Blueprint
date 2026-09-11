@@ -10,6 +10,12 @@ class MentorConversation(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     title = Column(String(200), nullable=False, default="New conversation")
+    
+    # Conversation State
+    agent_mode = Column(String(20), nullable=True)  # teacher, mentor, or null for unknown
+    active_topic = Column(String(200), nullable=True)  # The current teaching subject
+    current_task = Column(String(50), nullable=False, default="general")
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

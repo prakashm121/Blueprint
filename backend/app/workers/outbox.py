@@ -34,6 +34,10 @@ def enqueue_outbox(
         if existing:
             return existing
 
+    # Flush any pending changes from the parent transaction BEFORE establishing the savepoint
+    # so we don't accidentally catch their IntegrityErrors when establishing the savepoint.
+    db.flush()
+
     event = OutboxEvent(
         event_type=event_type,
         payload=json.dumps(payload),
@@ -41,9 +45,10 @@ def enqueue_outbox(
         max_attempts=max_attempts or settings.OUTBOX_MAX_ATTEMPTS,
         idempotency_key=idempotency_key,
     )
-    db.add(event)
+    
     try:
         with db.begin_nested():
+            db.add(event)
             db.flush()
     except IntegrityError:
         if idempotency_key:
